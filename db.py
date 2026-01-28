@@ -10,7 +10,9 @@ async def init(dsn: str):
     _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5)
 
     async with _pool.acquire() as conn:
-        # 1) Asosiy jadvallarni yaratamiz (agar yo'q bo'lsa)
+        # =========================
+        # USERS (asosiy)
+        # =========================
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id BIGINT PRIMARY KEY,
@@ -24,17 +26,12 @@ async def init(dsn: str):
             level TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT NOW()
         );
-
-        CREATE TABLE IF NOT EXISTS stage3_notes (
-            user_id BIGINT NOT NULL,
-            idx INT NOT NULL,
-            note TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            PRIMARY KEY(user_id, idx)
-        );
         """)
 
-        # 2) MIGRATION: eski bazada ustunlar yo'q bo'lsa, qo'shib chiqamiz
+        # =========================
+        # MIGRATION: users ustunlarini qo'shib chiqish
+        # (oldingi bazalarda bo'lmasa)
+        # =========================
         await conn.execute("""
         ALTER TABLE users ADD COLUMN IF NOT EXISTS stage2_text_done BOOLEAN DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS stage2_audio_done BOOLEAN DEFAULT FALSE;
@@ -44,6 +41,24 @@ async def init(dsn: str):
         ALTER TABLE users ADD COLUMN IF NOT EXISTS stage3_idx INT DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS stage3_waiting BOOLEAN DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS stage3_completed BOOLEAN DEFAULT FALSE;
+        """)
+
+        # =========================
+        # STAGE3 NOTES
+        # ❗ muammo shu joyda edi:
+        # oldingi jadval noto'g'ri bo'lgani uchun idx yo'q edi.
+        # Eng tez yechim: DROP + qayta yaratish
+        # =========================
+        await conn.execute("DROP TABLE IF EXISTS stage3_notes;")
+
+        await conn.execute("""
+        CREATE TABLE stage3_notes (
+            user_id BIGINT NOT NULL,
+            idx INT NOT NULL,
+            note TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY(user_id, idx)
+        );
         """)
 
 
@@ -60,6 +75,9 @@ def _p() -> asyncpg.Pool:
     return _pool
 
 
+# =========================
+# USERS
+# =========================
 async def ensure_user(user_id: int, inviter_id: int | None = None):
     pool = _p()
     async with pool.acquire() as conn:
@@ -114,6 +132,9 @@ async def get_user_profile(user_id: int) -> dict:
         return dict(row) if row else {}
 
 
+# =========================
+# STAGE 2
+# =========================
 async def get_stage2(user_id: int) -> dict:
     pool = _p()
     async with pool.acquire() as conn:
@@ -121,8 +142,10 @@ async def get_stage2(user_id: int) -> dict:
             SELECT stage2_text_done, stage2_audio_done, stage2_video_done, stage2_links_done
             FROM users WHERE user_id=$1
         """, user_id)
+
         if not row:
             return {"text_done": False, "audio_done": False, "video_done": False, "links_done": False}
+
         return {
             "text_done": bool(row["stage2_text_done"]),
             "audio_done": bool(row["stage2_audio_done"]),
@@ -140,6 +163,7 @@ async def mark_stage2(user_id: int, key: str):
     }
     if key not in mapping:
         raise ValueError("Invalid stage2 key")
+
     col = mapping[key]
     pool = _p()
     async with pool.acquire() as conn:
@@ -151,6 +175,22 @@ async def stage2_all_done(user_id: int) -> bool:
     return p["text_done"] and p["audio_done"] and p["video_done"] and p["links_done"]
 
 
+async def reset_stage2(user_id: int):
+    pool = _p()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET
+                stage2_text_done=FALSE,
+                stage2_audio_done=FALSE,
+                stage2_video_done=FALSE,
+                stage2_links_done=FALSE
+            WHERE user_id=$1
+        """, user_id)
+
+
+# =========================
+# STAGE 3
+# =========================
 async def set_stage3_idx(user_id: int, idx: int):
     pool = _p()
     async with pool.acquire() as conn:
@@ -187,6 +227,9 @@ async def save_stage3_note(user_id: int, idx: int, note: str):
         """, user_id, idx, note)
 
 
+# =========================
+# ADMIN OVERVIEW
+# =========================
 async def get_users_overview(limit: int = 50) -> list[dict]:
     pool = _p()
     async with pool.acquire() as conn:
@@ -200,14 +243,3 @@ async def get_users_overview(limit: int = 50) -> list[dict]:
             LIMIT $1
         """, limit)
         return [dict(r) for r in rows]
-async def reset_stage2(user_id: int):
-    pool = _p()
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            UPDATE users SET
-                stage2_text_done=FALSE,
-                stage2_audio_done=FALSE,
-                stage2_video_done=FALSE,
-                stage2_links_done=FALSE
-            WHERE user_id=$1
-        """, user_id)
