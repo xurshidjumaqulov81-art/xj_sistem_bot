@@ -4,21 +4,19 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
 
 import db
-from config import BOT_TOKEN, DATABASE_URL, NEXT_BOT_LINK
+from config import BOT_TOKEN, DATABASE_URL, NEXT_BOT_LINK, ADMIN_IDS
 from keyboards import (
-    kb_start,
-    kb_contact,
-    kb_levels,
-    kb_confirm,
-    kb_edit_fields,
-    kb_material_menu,
-    kb_done_button,
-    kb_stage3_start,
+    kb_start, kb_contact, kb_levels, kb_confirm, kb_edit_fields,
+    kb_material_menu, kb_done_button, kb_stage3_start
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+STAGE2_DIR = BASE_DIR / "content" / "stage4"   # <-- stage2 material shu yerdan olinadi
+STAGE3_DIR = BASE_DIR / "content" / "stage3"
 
 # ======================
 # STATES
@@ -33,18 +31,11 @@ REG_CONFIRM = "REG_CONFIRM"
 MATERIAL_MENU = "MATERIAL_MENU"
 
 STAGE3_INTRO = "STAGE3_INTRO"
-STAGE3_WAIT_COMMENT = "STAGE3_WAIT_COMMENT"
+STAGE3_WAIT_NOTE = "STAGE3_WAIT_NOTE"
 DONE = "DONE"
 
-# ======================
-# FILE PATHS
-# ======================
-BASE_DIR = Path(__file__).resolve().parent
-STAGE3_DIR = BASE_DIR / "content" / "stage3"
-
-# IMPORTANT: names must match GitHub EXACTLY
+# Stage3 audio list (sizda stage3 papkada)
 STAGE3_AUDIO_FILES = [
-    "10-ASOS DARSLIGI.mp3",
     "1-ASOS.mp3",
     "2-ASOS-COVER.mp3",
     "3-ASOS-COVER.mp3",
@@ -54,13 +45,32 @@ STAGE3_AUDIO_FILES = [
     "7-ASOS.mp3",
     "8-ASOS.mp3",
     "9-ASOS.mp3",
+    "10-ASOS DARSLIGI.mp3",
     "10-ASOS-2.mp3",
 ]
 
-# ======================
 bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+
+async def admin_notify(text: str):
+    if not ADMIN_IDS:
+        return
+    for aid in ADMIN_IDS:
+        try:
+            await bot.send_message(aid, text)
+        except:
+            pass
+
+def stage2_remaining_list(progress: dict) -> list[str]:
+    rem = []
+    if not progress["text_done"]: rem.append("📘 Матн")
+    if not progress["audio_done"]: rem.append("🎧 Аудио")
+    if not progress["video_done"]: rem.append("🎥 Видео")
+    if not progress["links_done"]: rem.append("🔗 Линклар")
+    return rem
 
 # ======================
 # STARTUP / SHUTDOWN
@@ -73,6 +83,49 @@ async def on_shutdown():
     await db.close()
     print("🛑 DB closed")
 
+# ======================
+# ADMIN
+# ======================
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    items = await db.get_users_overview(limit=30)
+    if not items:
+        return await message.answer("Ҳозирча фойдаланувчи йўқ.")
+    lines = ["<b>Сўнгги 30 фойдаланувчи:</b>\n"]
+    for u in items:
+        # stage2 %:
+        s2 = []
+        s2.append("✅" if u["stage2_text_done"] else "⬜")
+        s2.append("✅" if u["stage2_audio_done"] else "⬜")
+        s2.append("✅" if u["stage2_video_done"] else "⬜")
+        s2.append("✅" if u["stage2_links_done"] else "⬜")
+        lines.append(
+            f"👤 <b>{u['full_name'] or '—'}</b> | <code>{u['user_id']}</code>\n"
+            f"📌 state: <code>{u['state']}</code>\n"
+            f"2-босқич: {''.join(s2)} | 3-босқич idx: <b>{u['stage3_idx']}</b>\n"
+            "—"
+        )
+    lines.append("\n<b>Хабар юбориш:</b>\n<code>/send USER_ID матн</code>")
+    await message.answer("\n".join(lines))
+
+@dp.message(Command("send"))
+async def cmd_send(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        return await message.answer("Формат: <code>/send USER_ID матн</code>")
+    if not parts[1].isdigit():
+        return await message.answer("USER_ID рақам бўлиши керак.")
+    uid = int(parts[1])
+    txt = parts[2]
+    try:
+        await bot.send_message(uid, f"📩 <b>Админдан хабар:</b>\n\n{txt}")
+        await message.answer("✅ Юборилди.")
+    except Exception as e:
+        await message.answer(f"❌ Юборилмади: {e}")
 
 # ======================
 # /start
@@ -88,20 +141,20 @@ async def cmd_start(message: Message):
 
     await db.ensure_user(user_id, inviter_id)
 
+    await db.set_state(user_id, "")  # startda state bo'sh bo'lishi mumkin
     await message.answer(
-        "🤖 <b>ХЖ расмий бот тизимига хуш келибсиз!</b>\n\n"
+        "🤖 <b>XJ расмий бот тизимига хуш келибсиз!</b>\n\n"
         "Бу ерда сиз рўйхатдан ўтасиз ва ишни босқичма-босқич бошлайсиз.\n\n"
         "Бошлаш учун тугмани босинг 👇",
         reply_markup=kb_start()
     )
-
+    await admin_notify(f"🟢 /start: <code>{user_id}</code>")
 
 @dp.callback_query(F.data == "start:begin")
 async def start_begin(call: CallbackQuery):
     await call.answer()
     await db.set_state(call.from_user.id, REG_NAME)
     await call.message.answer("Рўйхатдан ўтишни бошлаймиз ✅\n\nИсм-фамилиянгизни ёзинг.")
-
 
 # ======================
 # TEXT HANDLER
@@ -112,58 +165,60 @@ async def text_handler(message: Message):
     state = await db.get_state(user_id)
     text = message.text.strip()
 
-    # 1) full name
+    # admin o'zi oddiy yozsa — hech narsa qilmaymiz
+    # (send komandasi bor)
+
+    # 1️⃣ Ism-familiya
     if state == REG_NAME:
         if len(text) < 3:
             return await message.answer("Илтимос, исм-фамилияни тўлиқроқ ёзинг.")
         await db.set_user_field(user_id, "full_name", text)
         await db.set_state(user_id, REG_XJ_ID)
-        return await message.answer("Раҳмат ✅\n\nЭнди <b>XJ ID</b> ни киритинг (7 хонали).")
+        await admin_notify(f"📝 1-босқич: {text} | <code>{user_id}</code>")
+        return await message.answer("Раҳмат ✅\n\nЭнди XJ ID ни киритинг (7 хонали).")
 
-    # 2) XJ ID
+    # 2️⃣ XJ ID
     if state == REG_XJ_ID:
         if not (text.isdigit() and len(text) == 7):
             return await message.answer("XJ ID 7 хонали рақам бўлиши керак.\nМасалан: 0123456")
         await db.set_user_field(user_id, "xj_id", text)
         await db.set_state(user_id, REG_JOIN_DATE)
-        return await message.answer("Қабул қилинди ✅\n\nХЖ га қачон қўшилгансиз? (эркин ёзинг)")
+        await admin_notify(f"📝 XJ ID: {text} | <code>{user_id}</code>")
+        return await message.answer("Қабул қилинди ✅\n\nXJ га қачон қўшилгансиз? (эркин ёзинг)")
 
-    # 3) join date
+    # 3️⃣ Qo‘shilgan vaqt
     if state == REG_JOIN_DATE:
         await db.set_user_field(user_id, "join_date_text", text)
         await db.set_state(user_id, REG_PHONE)
+        await admin_notify(f"📝 Қўшилган вақт: {text} | <code>{user_id}</code>")
         return await message.answer(
             "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг 👇",
             reply_markup=kb_contact()
         )
 
-    # Stage3: waiting comment
-    if state == STAGE3_WAIT_COMMENT:
-        flow = await db.get_stage3_flow(user_id)
-        idx = flow["current_idx"]
+    # 3-bosqich izoh (har audio’dan keyin)
+    if state == STAGE3_WAIT_NOTE:
+        idx = await db.get_stage3_idx(user_id)
+        await db.save_stage3_note(user_id, idx, text)
+        await db.set_stage3_waiting(user_id, False)
 
-        # Save comment for current idx (1-based for humans)
-        comment = text
-        await db.save_stage3_comment(user_id, idx, comment)
+        await admin_notify(f"🎧 3-босқич изоҳ | idx={idx+1} | <code>{user_id}</code>\n📝 {text}")
 
-        # Move next
+        # keyingi audio
         next_idx = idx + 1
         if next_idx >= len(STAGE3_AUDIO_FILES):
             await db.set_stage3_completed(user_id, True)
-            await db.set_stage3_waiting(user_id, False)
             await db.set_state(user_id, DONE)
 
-             await message.answer(
-    "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
-    "Энди навбатдаги босқичга ўтасиз 👇\n"
-    f"{NEXT_BOT_LINK}"
-)
+            msg = "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
+            if NEXT_BOT_LINK:
+                msg += f"Энди навбатдаги босқичга ўтасиз 👇\n{NEXT_BOT_LINK}"
+            else:
+                msg += "Админ сиз билан боғланади."
+            return await message.answer(msg)
+
         await db.set_stage3_idx(user_id, next_idx)
         return await send_stage3_audio(message, user_id, next_idx)
-
-    # default
-    return
-
 
 # ======================
 # CONTACT HANDLER
@@ -176,11 +231,11 @@ async def contact_handler(message: Message):
     if state == REG_PHONE:
         await db.set_user_field(user_id, "phone", message.contact.phone_number)
         await db.set_state(user_id, REG_LEVEL)
+        await admin_notify(f"📞 Телефон: {message.contact.phone_number} | <code>{user_id}</code>")
         return await message.answer(
             "Раҳмат ✅\n\nДаражангизни танланг:",
             reply_markup=kb_levels()
         )
-
 
 # ======================
 # REG LEVEL
@@ -197,17 +252,15 @@ async def reg_level(call: CallbackQuery):
     profile = await db.get_user_profile(user_id)
 
     text = (
-        "Маʼлумотларингизни текширинг:\n\n"
-        f"👤 Исм: {profile.get('full_name')}\n"
-        f"🆔 XJ ID: {profile.get('xj_id')}\n"
-        f"📅 Қўшилган вақт: {profile.get('join_date_text')}\n"
-        f"📞 Телефон: {profile.get('phone')}\n"
-        f"⭐ Даража: {profile.get('level')}\n\n"
+        "Маълумотларингизни текширинг:\n\n"
+        f"👤 Исм: {profile.get('full_name','')}\n"
+        f"🆔 XJ ID: {profile.get('xj_id','')}\n"
+        f"📅 Қўшилган вақт: {profile.get('join_date_text','')}\n"
+        f"📞 Телефон: {profile.get('phone','')}\n"
+        f"⭐ Даража: {profile.get('level','')}\n\n"
         "Тасдиқлайсизми?"
     )
-
     await call.message.answer(text, reply_markup=kb_confirm())
-
 
 # ======================
 # REG CONFIRM
@@ -220,12 +273,13 @@ async def reg_confirm_yes(call: CallbackQuery):
     await db.set_state(user_id, MATERIAL_MENU)
     progress = await db.get_stage2(user_id)
 
+    await admin_notify(f"✅ Рўйхатдан ўтди: <code>{user_id}</code>")
+
     await call.message.answer(
         "🎉 <b>Рўйхатдан муваффақиятли ўтдингиз!</b>\n\n"
-        "Энди ХЖ билан тўлиқ танишиб чиқамиз.",
+        "Энди XJ билан тўлиқ танишиб чиқамиз.",
         reply_markup=kb_material_menu(progress)
     )
-
 
 @dp.callback_query(F.data == "reg:confirm:edit")
 async def reg_confirm_edit(call: CallbackQuery):
@@ -235,202 +289,159 @@ async def reg_confirm_edit(call: CallbackQuery):
         reply_markup=kb_edit_fields()
     )
 
-
-@dp.callback_query(F.data.startswith("edit:"))
-async def edit_field(call: CallbackQuery):
-    await call.answer()
-    field = call.data.split(":")[1]
-    user_id = call.from_user.id
-
-    # route to state
-    mapping = {
-        "full_name": REG_NAME,
-        "xj_id": REG_XJ_ID,
-        "join_date_text": REG_JOIN_DATE,
-        "phone": REG_PHONE,
-        "level": REG_LEVEL,
-    }
-    new_state = mapping.get(field)
-    if not new_state:
-        return await call.message.answer("❌ Номаʼлум майдон.")
-
-    await db.set_state(user_id, new_state)
-
-    prompts = {
-        REG_NAME: "Исм-фамилиянгизни қайта ёзинг:",
-        REG_XJ_ID: "XJ ID ни қайта киритинг (7 хонали):",
-        REG_JOIN_DATE: "ХЖ га қачон қўшилгансиз? (эркин ёзинг)",
-        REG_PHONE: "Телефон рақамингизни қайта юборинг 👇",
-        REG_LEVEL: "Даражангизни қайта танланг:",
-    }
-
-    if new_state == REG_PHONE:
-        return await call.message.answer(prompts[new_state], reply_markup=kb_contact())
-    if new_state == REG_LEVEL:
-        return await call.message.answer(prompts[new_state], reply_markup=kb_levels())
-
-    return await call.message.answer(prompts[new_state])
-
-
 # ======================
-# STAGE 2 MATERIALS
+# STAGE 2 MATERIALS (content/stage4)
 # ======================
+async def stage2_send_text(call: CallbackQuery):
+    path = STAGE2_DIR / "XJXJ_Kompaniyasi_Tanishtiruv.txt"
+    if not path.exists():
+        return await call.message.answer("❌ Матн файли топилмади.")
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    await call.message.answer(
+        f"📘 <b>XJ компанияси ҳақида</b>\n\n{content}",
+        reply_markup=kb_done_button("✅ Ўқидим", "m2:done:text")
+    )
+
+async def stage2_send_audio(call: CallbackQuery):
+    path = STAGE2_DIR / "xjaudio.mp3"
+    if not path.exists():
+        return await call.message.answer("❌ Аудио файли топилмади.")
+    await call.message.answer_audio(
+        audio=FSInputFile(path),
+        caption="🎧 <b>XJ ҳақида аудио тушунтириш</b>",
+        reply_markup=kb_done_button("✅ Тингладим", "m2:done:audio")
+    )
+
+async def stage2_send_video(call: CallbackQuery):
+    # MOV ba’zan telegramda video bo‘lib ketmasligi mumkin, shuning uchun document yuboramiz
+    path = STAGE2_DIR / "XJVIDEO.MOV"
+    if not path.exists():
+        return await call.message.answer("❌ Видео файли топилмади.")
+    await call.message.answer_document(
+        document=FSInputFile(path),
+        caption="🎥 <b>XJ компанияси ҳақида видео</b>",
+        reply_markup=kb_done_button("✅ Кўрдим", "m2:done:video")
+    )
+
+async def stage2_send_links(call: CallbackQuery):
+    path = STAGE2_DIR / "xj_link.txt"
+    if not path.exists():
+        return await call.message.answer("❌ Линклар файли топилмади.")
+    content = path.read_text(encoding="utf-8", errors="ignore").strip()
+    if not content:
+        content = "—"
+    await call.message.answer(
+        f"🔗 <b>Фойдали ҳаволалар:</b>\n{content}",
+        reply_markup=kb_done_button("✅ Кўрдим", "m2:done:links")
+    )
+
 @dp.callback_query(F.data.startswith("m2:open:"))
 async def stage2_open(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
     item = call.data.split(":")[2]
 
+    await admin_notify(f"📂 2-босқич очди: {item} | <code>{user_id}</code>")
+
     if item == "text":
-        await call.message.answer(
-            "📘 <b>ХЖ компанияси ҳақида</b>\n\n(ХЖ ҳақида тўлиқ матн шу ерда бўлади)",
-            reply_markup=kb_done_button("✅ Ўқидим", "m2:done:matn")
-        )
-
-    elif item == "audio":
-        await call.message.answer(
-            "🎧 ХЖ ҳақида аудио тушунтириш\n\n(Аудио шу ерга қўйилади ёки файл/линк)",
-            reply_markup=kb_done_button("✅ Тингладим", "m2:done:audio")
-        )
-
-    elif item == "video":
-        await call.message.answer(
-            "🎥 ХЖ компанияси ҳақида видео\n\n(Видео шу ерга қўйилади ёки линк)",
-            reply_markup=kb_done_button("✅ Кўрдим", "m2:done:video")
-        )
-
-    elif item == "links":
-        await call.message.answer(
-            "🔗 Фойдали ҳаволалар:\n— Расмий сайт\n— Telegram\n— Instagram",
-            reply_markup=kb_done_button("✅ Кўрдим", "m2:done:links")
-        )
-
+        return await stage2_send_text(call)
+    if item == "audio":
+        return await stage2_send_audio(call)
+    if item == "video":
+        return await stage2_send_video(call)
+    if item == "links":
+        return await stage2_send_links(call)
 
 @dp.callback_query(F.data.startswith("m2:done:"))
 async def stage2_done(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
-    key = call.data.split(":")[2] + "_done"
+    key = call.data.split(":")[2] + "_done"  # text_done ...
 
     await db.mark_stage2(user_id, key)
     progress = await db.get_stage2(user_id)
+    rem = stage2_remaining_list(progress)
 
-    # show remaining
-    missing = []
-    if not progress.get("matn_done"):
-        missing.append("📘 Матн")
-    if not progress.get("audio_done"):
-        missing.append("🎧 Аудио")
-    if not progress.get("video_done"):
-        missing.append("🎥 Видео")
-    if not progress.get("links_done"):
-        missing.append("🔗 Линклар")
-
-    if missing:
-        msg = "✅ Сақланди!\n\nҚолгани: " + ", ".join(missing)
-    else:
-        msg = "✅ Ҳаммаси тайёр! Энди ➡️ <b>Давом этиш</b> ни босинг."
-
-    await call.message.answer(
-        msg,
-        reply_markup=kb_material_menu(progress)
+    await admin_notify(
+        f"✅ 2-босқич тасдиқ: {key} | <code>{user_id}</code>\n"
+        f"Қолди: {', '.join(rem) if rem else 'Йўқ'}"
     )
 
+    msg = "Сақланди ✅"
+    if rem:
+        msg += "\n\n<b>Қолди:</b> " + ", ".join(rem)
+    else:
+        msg += "\n\n🎉 <b>Ҳаммаси тайёр!</b> Энди ➡️ <b>Давом этиш</b> ни босинг."
 
-@dp.callback_query(F.data == "m2:locked")
-async def stage2_locked(call: CallbackQuery):
+    await call.message.answer(msg, reply_markup=kb_material_menu(progress))
+
+@dp.callback_query(F.data == "m2:continue_locked")
+async def stage2_continue_locked(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
     progress = await db.get_stage2(user_id)
-
-    missing = []
-    if not progress.get("matn_done"):
-        missing.append("📘 Матн")
-    if not progress.get("audio_done"):
-        missing.append("🎧 Аудио")
-    if not progress.get("video_done"):
-        missing.append("🎥 Видео")
-    if not progress.get("links_done"):
-        missing.append("🔗 Линклар")
-
-    await call.message.answer("🔒 Аввал қуйидагиларни тугатинг:\n" + "\n".join(missing))
-
+    rem = stage2_remaining_list(progress)
+    await call.message.answer(
+        "🔒 Ҳали ҳаммаси кўрилмаган.\n\n<b>Қолди:</b> " + ", ".join(rem),
+        reply_markup=kb_material_menu(progress)
+    )
 
 @dp.callback_query(F.data == "m2:continue")
 async def stage2_continue(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
+    if not await db.stage2_all_done(user_id):
+        progress = await db.get_stage2(user_id)
+        rem = stage2_remaining_list(progress)
+        return await call.message.answer(
+            "🔒 Ҳали ҳаммаси кўрилмаган.\n\n<b>Қолди:</b> " + ", ".join(rem),
+            reply_markup=kb_material_menu(progress)
+        )
 
-    # hard gate again (safety)
-    progress = await db.get_stage2(user_id)
-    all_done = all([
-        progress.get("matn_done"),
-        progress.get("audio_done"),
-        progress.get("video_done"),
-        progress.get("links_done"),
-    ])
-    if not all_done:
-        return await call.message.answer("🔒 Аввал 4 та материални тўлиқ кўриб чиқинг.")
-
-    await db.reset_stage3(user_id)
     await db.set_state(user_id, STAGE3_INTRO)
+    await admin_notify(f"➡️ 3-босқичга ўтди: <code>{user_id}</code>")
 
     await call.message.answer(
         "🎧 <b>3-босқич: Ишни бошлаш учун тўлиқ дарслик</b>\n\n"
-        "Ҳозир сизга <b>11 та</b> аудио кетма-кет берилади.\n"
+        "Ҳозир сизга 11 та аудио кетма-кет берилади.\n"
         "Ҳар аудиодан кейин: <b>Нимани тушундингиз?</b> деб сўрайман.\n\n"
         "Бошлаймиз ✅",
         reply_markup=kb_stage3_start()
     )
 
-
 # ======================
-# STAGE 3 SEND AUDIO
+# STAGE 3 (11 audio + izoh)
 # ======================
-async def send_stage3_audio(message_or_call, user_id: int, idx: int):
-    # idx is 0-based
-    filename = STAGE3_AUDIO_FILES[idx]
-    path = STAGE3_DIR / filename
-
+async def send_stage3_audio(message: Message, user_id: int, idx: int):
+    fname = STAGE3_AUDIO_FILES[idx]
+    path = STAGE3_DIR / fname
     if not path.exists():
-        # Show full path to debug
-        txt = (
-            "❌ <b>Аудио файл топилмади.</b>\n\n"
-            f"Керакли файл: <code>{filename}</code>\n"
-            f"Йўл: <code>{path}</code>\n\n"
+        await admin_notify(f"❌ 3-босқич аудио топилмади: {fname} | <code>{user_id}</code>")
+        return await message.answer(
+            "❌ Аудио файл топилмади.\n\n"
+            f"Керакли файл: <code>{fname}</code>\n"
+            f"Йўл: <code>{path.as_posix()}</code>\n\n"
             "Файл номи ва папкаси тўғрилигини текширинг."
         )
-        if isinstance(message_or_call, Message):
-            await message_or_call.answer(txt)
-        else:
-            await message_or_call.message.answer(txt)
-        return
 
-    # mark waiting comment
+    await message.answer_audio(
+        audio=FSInputFile(path),
+        caption=(
+            f"🎧 <b>{idx+1}-аудио</b>\n\n"
+            "Илтимос тинглаб бўлгач, изоҳ ёзинг:\n"
+            "<b>Нимани тушундингиз?</b>"
+        )
+    )
     await db.set_stage3_waiting(user_id, True)
-    await db.set_state(user_id, STAGE3_WAIT_COMMENT)
-
-    caption = f"🎧 <b>{idx+1}-аудио</b>\n\nИлоҳим тинглаб бўлгач, изоҳ ёзинг: <b>Нимани тушундингиз?</b>"
-    file = FSInputFile(path)
-
-    if isinstance(message_or_call, Message):
-        await message_or_call.answer_audio(file, caption=caption)
-    else:
-        await message_or_call.message.answer_audio(file, caption=caption)
-
+    await db.set_state(user_id, STAGE3_WAIT_NOTE)
 
 @dp.callback_query(F.data == "s3:start")
 async def stage3_start(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
-
-    flow = await db.get_stage3_flow(user_id)
-    idx = flow["current_idx"]
-
-    # Start from idx=0
     await db.set_stage3_idx(user_id, 0)
-    await send_stage3_audio(call, user_id, 0)
-
+    await admin_notify(f"🎧 3-босқич бошланди: <code>{user_id}</code>")
+    await send_stage3_audio(call.message, user_id, 0)
 
 # ======================
 # MAIN
@@ -441,7 +452,6 @@ async def main():
         await dp.start_polling(bot)
     finally:
         await on_shutdown()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
