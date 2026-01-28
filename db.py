@@ -200,3 +200,14 @@ async def get_users_overview(limit: int = 50) -> list[dict]:
             LIMIT $1
         """, limit)
         return [dict(r) for r in rows]
+async def reset_stage2(user_id: int):
+    pool = _p()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET
+                stage2_text_done=FALSE,
+                stage2_audio_done=FALSE,
+                stage2_video_done=FALSE,
+                stage2_links_done=FALSE
+            WHERE user_id=$1
+        """, user_id)
