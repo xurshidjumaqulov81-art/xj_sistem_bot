@@ -1,9 +1,4 @@
-# keyboards.py
-from aiogram.types import (
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-)
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 
@@ -57,7 +52,6 @@ def kb_done_button(text: str, callback_data: str) -> InlineKeyboardMarkup:
 
 
 def kb_material_menu(progress: dict) -> InlineKeyboardMarkup:
-    # progress keys: matn_done, audio_done, video_done, links_done
     def mark(v: bool) -> str:
         return "✅" if v else "🔸"
 
@@ -84,8 +78,8 @@ def kb_material_menu(progress: dict) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def kb_tushundim_copy() -> InlineKeyboardMarkup:
+def kb_stage3_tingladim() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Tushundim ✅ (Yuborish)", callback_data="s3:send_confirm")
+    kb.button(text="✅ Тингладим", callback_data="s3:ready_note")
     kb.adjust(1)
     return kb.as_markup()
