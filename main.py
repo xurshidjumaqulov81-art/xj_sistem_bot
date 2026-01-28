@@ -57,14 +57,24 @@ dp = Dispatcher()
 # HELPERS
 # ======================
 def normalize_stage2(progress) -> dict:
-    """progress None bo'lsa ham, har doim 4 key qaytarsin (KeyError bo'lmasin)."""
+    """
+    db.get_stage2() turlicha nom bilan qaytarishi mumkin.
+    Har doim kb_material_menu() uchun 4 ta keyni to'ldirib beradi.
+    """
     if not isinstance(progress, dict):
         progress = {}
+
+    def pick(*names):
+        for n in names:
+            if n in progress:
+                return bool(progress.get(n))
+        return False
+
     return {
-        "text_done": bool(progress.get("text_done", False)),
-        "audio_done": bool(progress.get("audio_done", False)),
-        "video_done": bool(progress.get("video_done", False)),
-        "links_done": bool(progress.get("links_done", False)),
+        "text_done":  pick("text_done",  "stage2_text_done"),
+        "audio_done": pick("audio_done", "stage2_audio_done"),
+        "video_done": pick("video_done", "stage2_video_done"),
+        "links_done": pick("links_done", "stage2_links_done"),
     }
 
 def is_admin(user_id: int) -> bool:
