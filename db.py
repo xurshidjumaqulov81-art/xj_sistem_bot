@@ -48,3 +48,22 @@ async def upsert_user(tg_id: int, **fields):
         tg_id,
         *values
     )
+async def ensure_stage2_row(tg_id: int):
+    await pool.execute(
+        "INSERT INTO stage2_progress (tg_id) VALUES ($1) ON CONFLICT (tg_id) DO NOTHING",
+        tg_id
+    )
+
+async def get_stage2(tg_id: int):
+    await ensure_stage2_row(tg_id)
+    return await pool.fetchrow("SELECT * FROM stage2_progress WHERE tg_id=$1", tg_id)
+
+async def set_stage2_done(tg_id: int, field: str):
+    # field: text_done / audio_done / video_done / links_done
+    if field not in ("text_done", "audio_done", "video_done", "links_done"):
+        raise ValueError("Invalid field")
+    await ensure_stage2_row(tg_id)
+    await pool.execute(
+        f"UPDATE stage2_progress SET {field}=TRUE, updated_at=NOW() WHERE tg_id=$1",
+        tg_id
+    )
