@@ -1,11 +1,38 @@
 # config.py
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
+# =========================
+# TELEGRAM BOT TOKEN
+# =========================
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN",
+    "BU_YERGA_BOT_TOKEN_YOZISHINGIZ_MUMKIN"
+)
 
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN missing")
+# =========================
+# DATABASE (Postgres)
+# =========================
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://user:password@host:port/dbname"
+)
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL missing")
+# =========================
+# NEXT BOT / NEXT STEP
+# =========================
+# Agar keyingi bot yoki link bo‘lmasa — bo‘sh qoldiring
+NEXT_BOT_LINK = os.getenv(
+    "NEXT_BOT_LINK",
+    ""
+)
+
+# =========================
+# PROJECT SETTINGS
+# =========================
+PROJECT_NAME = "XJ SISTEM"
+LANGUAGE = "uz_krill"
+
+# =========================
+# STAGE 3 SETTINGS
+# =========================
+STAGE3_TOTAL_AUDIOS = 11
