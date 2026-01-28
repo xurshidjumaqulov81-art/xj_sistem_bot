@@ -115,9 +115,34 @@ async def on_shutdown():
     print("🛑 DB closed")
 
 
+XURSHID ILHAMIDDINOVICH, [29/01/26 02:18]
+async def reset_stage2(user_id: int):
+    pool = _p()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET
+                stage2_text_done=FALSE,
+                stage2_audio_done=FALSE,
+                stage2_video_done=FALSE,
+                stage2_links_done=FALSE
+            WHERE user_id=$1
+        """, user_id)
+
+
+# ✅ HAMMA USER ID LARNI OLISH (broadcast uchun)
+async def get_all_user_ids(limit: int = 100000) -> list[int]:
+    pool = _p()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT user_id FROM users ORDER BY created_at DESC LIMIT $1",
+            limit
+        )
+        return [int(r["user_id"]) for r in rows]
+
 # ======================
 # ADMIN
 # ======================
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
@@ -128,18 +153,21 @@ async def cmd_admin(message: Message):
     lines = ["<b>Сўнгги 30 фойдаланувчи:</b>\n"]
     for u in items:
         s2 = []
-        s2.append("✅" if u["stage2_text_done"] else "⬜")
-        s2.append("✅" if u["stage2_audio_done"] else "⬜")
-        s2.append("✅" if u["stage2_video_done"] else "⬜")
-        s2.append("✅" if u["stage2_links_done"] else "⬜")
+        s2.append("✅" if u["stage2_text_done"] else "⬜️")
+        s2.append("✅" if u["stage2_audio_done"] else "⬜️")
+        s2.append("✅" if u["stage2_video_done"] else "⬜️")
+        s2.append("✅" if u["stage2_links_done"] else "⬜️")
         lines.append(
             f"👤 <b>{u['full_name'] or '—'}</b> | <code>{u['user_id']}</code>\n"
             f"📌 state: <code>{u['state']}</code>\n"
             f"2-босқич: {''.join(s2)} | 3-босқич idx: <b>{u['stage3_idx']}</b>\n"
             "—"
         )
-    lines.append("\n<b>Хабар юбориш:</b>\n<code>/send USER_ID матн</code>")
+    lines.append("\n<b>Хабар юбориш:</b>\n"
+                 "<code>/send USER_ID матн</code>\n"
+                 "<code>/broadcast матн</code>")
     await message.answer("\n".join(lines))
+
 
 @dp.message(Command("send"))
 async def cmd_send(message: Message):
@@ -159,6 +187,33 @@ async def cmd_send(message: Message):
         await message.answer(f"❌ Юборилмади: {e}")
 
 
+# ✅ HAMMAGA XABAR
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        return await message.answer("Формат: <code>/broadcast матн</code>")
+
+    text = parts[1]
+
+    users = await db.get_users_overview(limit=100000)
+
+    sent = 0
+    for u in users:
+        try:
+            await bot.send_message(
+                u["user_id"],
+                f"📢 <b>Админдан хабар:</b>\n\n{text}"
+            )
+            sent += 1
+        except:
+            pass
+
+    await message.answer(f"✅ {sent} та фойдаланувчига юборилди.")
+    
 # ======================
 # /start
 # ======================
