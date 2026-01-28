@@ -153,15 +153,11 @@ async def text_handler(message: Message):
             await db.set_stage3_waiting(user_id, False)
             await db.set_state(user_id, DONE)
 
-              text = "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
-
-if NEXT_BOT_LINK:
-    text += "Энди навбатдаги босқичга ўтасиз 👇\n" + NEXT_BOT_LINK
-else:
-    text += "Админ сиз билан боғланади."
-
-await message.answer(text)
-
+             await message.answer(
+    "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
+    "Энди навбатдаги босқичга ўтасиз 👇\n"
+    f"{NEXT_BOT_LINK}"
+)
         await db.set_stage3_idx(user_id, next_idx)
         return await send_stage3_audio(message, user_id, next_idx)
 
