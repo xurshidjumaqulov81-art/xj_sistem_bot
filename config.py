@@ -3,11 +3,8 @@ import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-
-# Keyingi bot linki (ixtiyoriy)
 NEXT_BOT_LINK = os.getenv("NEXT_BOT_LINK", "").strip()
 
-# Adminlar: "12345,67890"
 _admins_raw = os.getenv("ADMIN_IDS", "").strip()
 ADMIN_IDS = []
 if _admins_raw:
