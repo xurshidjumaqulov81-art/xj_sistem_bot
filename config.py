@@ -1,38 +1,14 @@
 # config.py
 import os
 
-# =========================
-# TELEGRAM BOT TOKEN
-# =========================
-BOT_TOKEN = os.getenv(
-    "BOT_TOKEN",
-    "BU_YERGA_BOT_TOKEN_YOZISHINGIZ_MUMKIN"
-)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-# =========================
-# DATABASE (Postgres)
-# =========================
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://user:password@host:port/dbname"
-)
+# keyingi bot linki (ixtiyoriy)
+NEXT_BOT_LINK = os.getenv("NEXT_BOT_LINK", "").strip()
 
-# =========================
-# NEXT BOT / NEXT STEP
-# =========================
-# Agar keyingi bot yoki link bo‘lmasa — bo‘sh qoldiring
-NEXT_BOT_LINK = os.getenv(
-    "NEXT_BOT_LINK",
-    ""
-)
-
-# =========================
-# PROJECT SETTINGS
-# =========================
-PROJECT_NAME = "XJ SISTEM"
-LANGUAGE = "uz_krill"
-
-# =========================
-# STAGE 3 SETTINGS
-# =========================
-STAGE3_TOTAL_AUDIOS = 11
+# Adminlar: "12345,67890"
+_admins_raw = os.getenv("ADMIN_IDS", "").strip()
+ADMIN_IDS = []
+if _admins_raw:
+    ADMIN_IDS = [int(x.strip()) for x in _admins_raw.split(",") if x.strip().isdigit()]
