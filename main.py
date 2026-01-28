@@ -196,6 +196,7 @@ async def start_begin(call: CallbackQuery):
 async def text_handler(message: Message):
     user_id = message.from_user.id
     state = await db.get_state(user_id)
+    await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
     text = message.text.strip()
 
     # 1️⃣ Ism-familiya
