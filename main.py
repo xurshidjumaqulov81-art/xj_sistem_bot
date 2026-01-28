@@ -302,26 +302,28 @@ async def reg_confirm_yes(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
 
-    await db.set_state(user_id, MATERIAL_MENU)
+    try:
+        await db.set_state(user_id, MATERIAL_MENU)
 
-    # ✅ MUHIM: progress har doim 4 key bilan bo'lsin
-    progress = normalize_stage2(await db.get_stage2(user_id))
+        progress_raw = await db.get_stage2(user_id)
+        progress = normalize_stage2(progress_raw)
 
-    await admin_notify(f"✅ Рўйхатдан ўтди: <code>{user_id}</code>")
+        await admin_notify(
+            f"✅ CONFIRM YES OK | user=<code>{user_id}</code>\n"
+            f"raw={progress_raw}\n"
+            f"norm={progress}"
+        )
 
-    await call.message.answer(
-        "🎉 <b>Рўйхатдан муваффақиятли ўтдингиз!</b>\n\n"
-        "Энди XJ билан тўлиқ танишиб чиқамиз.",
-        reply_markup=kb_material_menu(progress)
-    )
+        return await call.message.answer(
+            "🎉 <b>Рўйхатдан муваффақиятли ўтдингиз!</b>\n\n"
+            "Энди XJ билан тўлиқ танишиб чиқамиз.",
+            reply_markup=kb_material_menu(progress)
+        )
 
-@dp.callback_query(F.data == "reg:confirm:edit")
-async def reg_confirm_edit(call: CallbackQuery):
-    await call.answer()
-    await call.message.answer(
-        "Қайси маълумотни ўзгартирасиз?",
-        reply_markup=kb_edit_fields()
-    )
+    except Exception as e:
+        # xatoni ham userga, ham adminga chiqaramiz
+        await admin_notify(f"❌ CONFIRM YES ERROR | user=<code>{user_id}</code>\n{repr(e)}")
+        return await call.message.answer(f"❌ Хато чиқди: <code>{repr(e)}</code>")
 
 
 # ======================
