@@ -42,6 +42,7 @@ STAGE3_DONE = "STAGE3_DONE"
 # Papka: content/stage3/
 # ======================
 STAGE3_FILES = [
+    "10-ASOS DARSLIGI.mp3",
     "1-ASOS.mp3",
     "2-ASOS.mp3",
     "3-ASOS.mp3",
@@ -51,9 +52,8 @@ STAGE3_FILES = [
     "7-ASOS.mp3",
     "8-ASOS.mp3",
     "9-ASOS.mp3",
-    "10-ASOS-2.mp3",  # sizda shunaqa bo‘lsa, qoldiring
-    "11-ASOS.mp3",
-]
+    "10-ASOS.mp3",  # sizda shunaqa bo‘lsa, qoldiring
+\]
 
 BASE_DIR = Path(__file__).resolve().parent
 STAGE3_DIR = BASE_DIR / "content" / "stage3"
