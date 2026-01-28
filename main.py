@@ -257,7 +257,19 @@ async def stage2_done(call: CallbackQuery):
         reply_markup=kb_material_menu(progress)
     )
 
+@dp.callback_query(F.data == "m2:locked")
+async def m2_locked(call: CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    p = await db.get_stage2(user_id)
 
+    missing = []
+    if not p.get("matn_done", False):  missing.append("📘 Matn")
+    if not p.get("audio_done", False): missing.append("🎧 Audio")
+    if not p.get("video_done", False): missing.append("🎥 Video")
+    if not p.get("links_done", False): missing.append("🔗 Linklar")
+
+    await call.message.answer("⛔ Davom etish yopiq.\nQolganlar:\n" + "\n".join(missing))
 @dp.callback_query(F.data == "m2:continue")
 async def stage2_continue(call: CallbackQuery):
     await call.answer()
