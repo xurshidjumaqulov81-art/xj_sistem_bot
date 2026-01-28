@@ -44,15 +44,15 @@ STAGE3_DONE = "STAGE3_DONE"
 STAGE3_FILES = [
     "10-ASOS DARSLIGI.mp3",
     "1-ASOS.mp3",
-    "2-ASOS.mp3",
-    "3-ASOS.mp3",
+    "2-ASOS-COVER.mp3",
+    "3-ASOS-COVER.mp3",
     "4-ASOS.mp3",
     "5-ASOS.mp3",
     "6-ASOS.mp3",
     "7-ASOS.mp3",
     "8-ASOS.mp3",
     "9-ASOS.mp3",
-    "10-ASOS.mp3",  # sizda shunaqa bo‘lsa, qoldiring
+    "10-ASOS-2.mp3",  # sizda shunaqa bo‘lsa, qoldiring
 \]
 
 BASE_DIR = Path(__file__).resolve().parent
