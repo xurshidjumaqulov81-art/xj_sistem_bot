@@ -44,6 +44,7 @@ STAGE3_DIR = BASE_DIR / "content" / "stage3"
 
 # IMPORTANT: names must match GitHub EXACTLY
 STAGE3_AUDIO_FILES = [
+    "10-ASOS DARSLIGI.mp3",
     "1-ASOS.mp3",
     "2-ASOS-COVER.mp3",
     "3-ASOS-COVER.mp3",
@@ -53,7 +54,6 @@ STAGE3_AUDIO_FILES = [
     "7-ASOS.mp3",
     "8-ASOS.mp3",
     "9-ASOS.mp3",
-    "10-ASOS DARSLIGI.mp3",
     "10-ASOS-2.mp3",
 ]
 
