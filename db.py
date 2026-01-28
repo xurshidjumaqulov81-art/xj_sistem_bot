@@ -61,35 +61,24 @@ class Database:
         );
         """)
 
-        # stage3 progress (old single confirm - qolsin, zarar qilmaydi)
+        # stage3 flow: 11 audio + comments
         await self.execute("""
-        CREATE TABLE IF NOT EXISTS stage3_progress (
-            user_id         BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
-            confirmed_text  TEXT,
-            confirmed_at    TIMESTAMPTZ
+        CREATE TABLE IF NOT EXISTS stage3_flow (
+            user_id             BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            current_idx         INT DEFAULT 0,
+            waiting_comment     BOOLEAN DEFAULT FALSE,
+            completed           BOOLEAN DEFAULT FALSE,
+            updated_at          TIMESTAMPTZ DEFAULT NOW()
         );
         """)
 
-        # ✅ NEW: stage3 notes (11 ta audio izoh)
         await self.execute("""
-        CREATE TABLE IF NOT EXISTS stage3_notes (
+        CREATE TABLE IF NOT EXISTS stage3_comments (
             user_id     BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-            lesson_no   INT NOT NULL,
-            note_text   TEXT NOT NULL,
+            idx         INT NOT NULL,
+            comment     TEXT NOT NULL,
             created_at  TIMESTAMPTZ DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ DEFAULT NOW(),
-            PRIMARY KEY (user_id, lesson_no)
-        );
-        """)
-
-        # leads (20)
-        await self.execute("""
-        CREATE TABLE IF NOT EXISTS leads (
-            user_id     BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-            lead_index  INT NOT NULL,
-            name_raw    TEXT NOT NULL,
-            created_at  TIMESTAMPTZ DEFAULT NOW(),
-            PRIMARY KEY (user_id, lead_index)
+            PRIMARY KEY (user_id, idx)
         );
         """)
 
@@ -98,24 +87,22 @@ class Database:
         row = await self.fetchrow("SELECT user_id FROM users WHERE user_id=$1", user_id)
         if row is None:
             await self.execute(
-                "INSERT INTO users(user_id, state, ref_code, inviter_id) VALUES($1, 'REG_NAME', md5(random()::text), $2)",
+                "INSERT INTO users(user_id, state, inviter_id, ref_code) "
+                "VALUES($1, 'REG_NAME', $2, md5(random()::text))",
                 user_id, inviter_id
             )
             await self.execute(
                 "INSERT INTO stage2_progress(user_id) VALUES($1) ON CONFLICT DO NOTHING",
                 user_id
             )
+            await self.execute(
+                "INSERT INTO stage3_flow(user_id) VALUES($1) ON CONFLICT DO NOTHING",
+                user_id
+            )
         else:
-            # inviter_id bo‘sh bo‘lsa set qilmaymiz
-            if inviter_id is not None:
-                await self.execute(
-                    "UPDATE users SET inviter_id=COALESCE(inviter_id, $2) WHERE user_id=$1",
-                    user_id, inviter_id
-                )
-
-    async def get_user_id_by_ref_code(self, ref_code: str) -> Optional[int]:
-        row = await self.fetchrow("SELECT user_id FROM users WHERE ref_code=$1", ref_code)
-        return int(row["user_id"]) if row else None
+            # make sure helper rows exist
+            await self.execute("INSERT INTO stage2_progress(user_id) VALUES($1) ON CONFLICT DO NOTHING", user_id)
+            await self.execute("INSERT INTO stage3_flow(user_id) VALUES($1) ON CONFLICT DO NOTHING", user_id)
 
     async def get_state(self, user_id: int) -> str:
         row = await self.fetchrow("SELECT state FROM users WHERE user_id=$1", user_id)
@@ -133,6 +120,10 @@ class Database:
         row = await self.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
         return dict(row) if row else None
 
+    async def get_user_id_by_ref_code(self, ref_code: str) -> Optional[int]:
+        row = await self.fetchrow("SELECT user_id FROM users WHERE ref_code=$1", ref_code)
+        return int(row["user_id"]) if row else None
+
     # ---------- stage2 ----------
     async def mark_stage2(self, user_id: int, key: str):
         if key not in {"matn_done", "audio_done", "video_done", "links_done"}:
@@ -147,119 +138,128 @@ class Database:
         if not row:
             return {"matn_done": False, "audio_done": False, "video_done": False, "links_done": False}
         return {
-            "matn_done": row["matn_done"],
-            "audio_done": row["audio_done"],
-            "video_done": row["video_done"],
-            "links_done": row["links_done"],
+            "matn_done": bool(row["matn_done"]),
+            "audio_done": bool(row["audio_done"]),
+            "video_done": bool(row["video_done"]),
+            "links_done": bool(row["links_done"]),
         }
 
-    # ---------- stage3 (old) ----------
-    async def set_stage3_confirm(self, user_id: int, text: str):
+    # ---------- stage3 ----------
+    async def reset_stage3(self, user_id: int):
         await self.execute("""
-            INSERT INTO stage3_progress(user_id, confirmed_text, confirmed_at)
-            VALUES($1, $2, NOW())
-            ON CONFLICT (user_id)
-            DO UPDATE SET confirmed_text=EXCLUDED.confirmed_text, confirmed_at=EXCLUDED.confirmed_at
-        """, user_id, text)
-
-    # ✅ ---------- stage3 notes ----------
-    async def save_stage3_note(self, user_id: int, lesson_no: int, note_text: str):
-        note_text = (note_text or "").strip()
-        if not note_text:
-            raise ValueError("Empty note")
-        await self.execute("""
-            INSERT INTO stage3_notes(user_id, lesson_no, note_text, created_at, updated_at)
-            VALUES($1, $2, $3, NOW(), NOW())
-            ON CONFLICT (user_id, lesson_no)
-            DO UPDATE SET note_text=EXCLUDED.note_text, updated_at=NOW()
-        """, user_id, lesson_no, note_text)
-
-    async def get_stage3_notes(self, user_id: int) -> List[Dict[str, Any]]:
-        rows = await self.fetch("""
-            SELECT lesson_no, note_text, updated_at
-            FROM stage3_notes
-            WHERE user_id=$1
-            ORDER BY lesson_no
+            INSERT INTO stage3_flow(user_id, current_idx, waiting_comment, completed, updated_at)
+            VALUES($1, 0, FALSE, FALSE, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET current_idx=0, waiting_comment=FALSE, completed=FALSE, updated_at=NOW()
         """, user_id)
-        return [dict(r) for r in rows]
+        await self.execute("DELETE FROM stage3_comments WHERE user_id=$1", user_id)
 
-    # ---------- leads ----------
-    async def set_lead(self, user_id: int, idx: int, name_raw: str):
+    async def get_stage3_flow(self, user_id: int) -> Dict[str, Any]:
+        row = await self.fetchrow("SELECT * FROM stage3_flow WHERE user_id=$1", user_id)
+        if not row:
+            return {"current_idx": 0, "waiting_comment": False, "completed": False}
+        return {
+            "current_idx": int(row["current_idx"]),
+            "waiting_comment": bool(row["waiting_comment"]),
+            "completed": bool(row["completed"]),
+        }
+
+    async def set_stage3_waiting(self, user_id: int, waiting: bool):
+        await self.execute(
+            "UPDATE stage3_flow SET waiting_comment=$2, updated_at=NOW() WHERE user_id=$1",
+            user_id, waiting
+        )
+
+    async def set_stage3_idx(self, user_id: int, idx: int):
+        await self.execute(
+            "UPDATE stage3_flow SET current_idx=$2, updated_at=NOW() WHERE user_id=$1",
+            user_id, idx
+        )
+
+    async def set_stage3_completed(self, user_id: int, completed: bool = True):
+        await self.execute(
+            "UPDATE stage3_flow SET completed=$2, updated_at=NOW() WHERE user_id=$1",
+            user_id, completed
+        )
+
+    async def save_stage3_comment(self, user_id: int, idx: int, comment: str):
         await self.execute("""
-            INSERT INTO leads(user_id, lead_index, name_raw)
+            INSERT INTO stage3_comments(user_id, idx, comment)
             VALUES($1, $2, $3)
-            ON CONFLICT (user_id, lead_index)
-            DO UPDATE SET name_raw=EXCLUDED.name_raw
-        """, user_id, idx, name_raw)
-
-    async def get_leads(self, user_id: int) -> List[Dict[str, Any]]:
-        rows = await self.fetch("SELECT lead_index, name_raw FROM leads WHERE user_id=$1 ORDER BY lead_index", user_id)
-        return [dict(r) for r in rows]
+            ON CONFLICT (user_id, idx) DO UPDATE SET comment=EXCLUDED.comment
+        """, user_id, idx, comment)
 
 
-# =========================
-# module-level helpers
-# =========================
-_db: Optional[Database] = None
+DB: Optional[Database] = None
 
 
 async def init(dsn: str):
-    global _db
-    _db = Database(dsn)
-    await _db.connect()
-    await _db.init_schema()
+    global DB
+    DB = Database(dsn)
+    await DB.connect()
+    await DB.init_schema()
 
 
 async def close():
-    global _db
-    if _db:
-        await _db.close()
-        _db = None
+    global DB
+    if DB:
+        await DB.close()
+        DB = None
 
 
-def _must_db() -> Database:
-    assert _db is not None, "DB is not initialized"
-    return _db
-
-
-# proxy functions (main.py shu bilan ishlaydi)
+# --- Proxy functions ---
 async def ensure_user(user_id: int, inviter_id: Optional[int] = None):
-    return await _must_db().ensure_user(user_id, inviter_id)
+    assert DB is not None
+    return await DB.ensure_user(user_id, inviter_id)
 
 async def get_user_id_by_ref_code(ref_code: str) -> Optional[int]:
-    return await _must_db().get_user_id_by_ref_code(ref_code)
+    assert DB is not None
+    return await DB.get_user_id_by_ref_code(ref_code)
 
 async def get_state(user_id: int) -> str:
-    return await _must_db().get_state(user_id)
+    assert DB is not None
+    return await DB.get_state(user_id)
 
 async def set_state(user_id: int, state: str):
-    return await _must_db().set_state(user_id, state)
+    assert DB is not None
+    return await DB.set_state(user_id, state)
 
 async def set_user_field(user_id: int, field: str, value: Any):
-    return await _must_db().set_user_field(user_id, field, value)
+    assert DB is not None
+    return await DB.set_user_field(user_id, field, value)
 
 async def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
-    return await _must_db().get_user_profile(user_id)
+    assert DB is not None
+    return await DB.get_user_profile(user_id)
 
 async def mark_stage2(user_id: int, key: str):
-    return await _must_db().mark_stage2(user_id, key)
+    assert DB is not None
+    return await DB.mark_stage2(user_id, key)
 
 async def get_stage2(user_id: int) -> Dict[str, bool]:
-    return await _must_db().get_stage2(user_id)
+    assert DB is not None
+    return await DB.get_stage2(user_id)
 
-async def set_stage3_confirm(user_id: int, text: str):
-    return await _must_db().set_stage3_confirm(user_id, text)
+async def reset_stage3(user_id: int):
+    assert DB is not None
+    return await DB.reset_stage3(user_id)
 
-# ✅ stage3 notes proxy
-async def save_stage3_note(user_id: int, lesson_no: int, note_text: str):
-    return await _must_db().save_stage3_note(user_id, lesson_no, note_text)
+async def get_stage3_flow(user_id: int) -> Dict[str, Any]:
+    assert DB is not None
+    return await DB.get_stage3_flow(user_id)
 
-async def get_stage3_notes(user_id: int) -> List[Dict[str, Any]]:
-    return await _must_db().get_stage3_notes(user_id)
+async def set_stage3_waiting(user_id: int, waiting: bool):
+    assert DB is not None
+    return await DB.set_stage3_waiting(user_id, waiting)
 
-# leads proxy
-async def set_lead(user_id: int, idx: int, name_raw: str):
-    return await _must_db().set_lead(user_id, idx, name_raw)
+async def set_stage3_idx(user_id: int, idx: int):
+    assert DB is not None
+    return await DB.set_stage3_idx(user_id, idx)
 
-async def get_leads(user_id: int) -> List[Dict[str, Any]]:
-    return await _must_db().get_leads(user_id)
+async def set_stage3_completed(user_id: int, completed: bool = True):
+    assert DB is not None
+    return await DB.set_stage3_completed(user_id, completed)
+
+async def save_stage3_comment(user_id: int, idx: int, comment: str):
+    assert DB is not None
+    return await DB.save_stage3_comment(user_id, idx, comment)
