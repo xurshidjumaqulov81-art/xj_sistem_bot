@@ -15,7 +15,7 @@ from keyboards import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-STAGE2_DIR = BASE_DIR / "content" / "stage4"   # <-- stage2 material shu yerdan olinadi
+STAGE2_DIR = BASE_DIR / "content" / "stage4"   # 2-bosqich material shu yerdan olinadi
 STAGE3_DIR = BASE_DIR / "content" / "stage3"
 
 # ======================
@@ -34,7 +34,7 @@ STAGE3_INTRO = "STAGE3_INTRO"
 STAGE3_WAIT_NOTE = "STAGE3_WAIT_NOTE"
 DONE = "DONE"
 
-# Stage3 audio list (sizda stage3 papkada)
+# Stage3 audio list
 STAGE3_AUDIO_FILES = [
     "1-ASOS.mp3",
     "2-ASOS-COVER.mp3",
@@ -52,8 +52,23 @@ STAGE3_AUDIO_FILES = [
 bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
+
+# ======================
+# HELPERS
+# ======================
+def normalize_stage2(progress) -> dict:
+    """progress None bo'lsa ham, har doim 4 key qaytarsin (KeyError bo'lmasin)."""
+    if not isinstance(progress, dict):
+        progress = {}
+    return {
+        "text_done": bool(progress.get("text_done", False)),
+        "audio_done": bool(progress.get("audio_done", False)),
+        "video_done": bool(progress.get("video_done", False)),
+        "links_done": bool(progress.get("links_done", False)),
+    }
+
 def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+    return user_id in (ADMIN_IDS or [])
 
 async def admin_notify(text: str):
     if not ADMIN_IDS:
@@ -65,12 +80,18 @@ async def admin_notify(text: str):
             pass
 
 def stage2_remaining_list(progress: dict) -> list[str]:
+    progress = normalize_stage2(progress)
     rem = []
-    if not progress["text_done"]: rem.append("📘 Матн")
-    if not progress["audio_done"]: rem.append("🎧 Аудио")
-    if not progress["video_done"]: rem.append("🎥 Видео")
-    if not progress["links_done"]: rem.append("🔗 Линклар")
+    if not progress["text_done"]:
+        rem.append("📘 Матн")
+    if not progress["audio_done"]:
+        rem.append("🎧 Аудио")
+    if not progress["video_done"]:
+        rem.append("🎥 Видео")
+    if not progress["links_done"]:
+        rem.append("🔗 Линклар")
     return rem
+
 
 # ======================
 # STARTUP / SHUTDOWN
@@ -82,6 +103,7 @@ async def on_startup():
 async def on_shutdown():
     await db.close()
     print("🛑 DB closed")
+
 
 # ======================
 # ADMIN
@@ -95,7 +117,6 @@ async def cmd_admin(message: Message):
         return await message.answer("Ҳозирча фойдаланувчи йўқ.")
     lines = ["<b>Сўнгги 30 фойдаланувчи:</b>\n"]
     for u in items:
-        # stage2 %:
         s2 = []
         s2.append("✅" if u["stage2_text_done"] else "⬜")
         s2.append("✅" if u["stage2_audio_done"] else "⬜")
@@ -127,6 +148,7 @@ async def cmd_send(message: Message):
     except Exception as e:
         await message.answer(f"❌ Юборилмади: {e}")
 
+
 # ======================
 # /start
 # ======================
@@ -156,6 +178,7 @@ async def start_begin(call: CallbackQuery):
     await db.set_state(call.from_user.id, REG_NAME)
     await call.message.answer("Рўйхатдан ўтишни бошлаймиз ✅\n\nИсм-фамилиянгизни ёзинг.")
 
+
 # ======================
 # TEXT HANDLER
 # ======================
@@ -164,9 +187,6 @@ async def text_handler(message: Message):
     user_id = message.from_user.id
     state = await db.get_state(user_id)
     text = message.text.strip()
-
-    # admin o'zi oddiy yozsa — hech narsa qilmaymiz
-    # (send komandasi bor)
 
     # 1️⃣ Ism-familiya
     if state == REG_NAME:
@@ -196,7 +216,7 @@ async def text_handler(message: Message):
             reply_markup=kb_contact()
         )
 
-    # 3-bosqich izoh (har audio’dan keyin)
+    # 3-bosqich izoh
     if state == STAGE3_WAIT_NOTE:
         idx = await db.get_stage3_idx(user_id)
         await db.save_stage3_note(user_id, idx, text)
@@ -204,7 +224,6 @@ async def text_handler(message: Message):
 
         await admin_notify(f"🎧 3-босқич изоҳ | idx={idx+1} | <code>{user_id}</code>\n📝 {text}")
 
-        # keyingi audio
         next_idx = idx + 1
         if next_idx >= len(STAGE3_AUDIO_FILES):
             await db.set_stage3_completed(user_id, True)
@@ -219,6 +238,7 @@ async def text_handler(message: Message):
 
         await db.set_stage3_idx(user_id, next_idx)
         return await send_stage3_audio(message, user_id, next_idx)
+
 
 # ======================
 # CONTACT HANDLER
@@ -236,6 +256,7 @@ async def contact_handler(message: Message):
             "Раҳмат ✅\n\nДаражангизни танланг:",
             reply_markup=kb_levels()
         )
+
 
 # ======================
 # REG LEVEL
@@ -262,6 +283,7 @@ async def reg_level(call: CallbackQuery):
     )
     await call.message.answer(text, reply_markup=kb_confirm())
 
+
 # ======================
 # REG CONFIRM
 # ======================
@@ -271,7 +293,9 @@ async def reg_confirm_yes(call: CallbackQuery):
     user_id = call.from_user.id
 
     await db.set_state(user_id, MATERIAL_MENU)
-    progress = await db.get_stage2(user_id)
+
+    # ✅ MUHIM: progress har doim 4 key bilan bo'lsin
+    progress = normalize_stage2(await db.get_stage2(user_id))
 
     await admin_notify(f"✅ Рўйхатдан ўтди: <code>{user_id}</code>")
 
@@ -288,6 +312,7 @@ async def reg_confirm_edit(call: CallbackQuery):
         "Қайси маълумотни ўзгартирасиз?",
         reply_markup=kb_edit_fields()
     )
+
 
 # ======================
 # STAGE 2 MATERIALS (content/stage4)
@@ -313,7 +338,6 @@ async def stage2_send_audio(call: CallbackQuery):
     )
 
 async def stage2_send_video(call: CallbackQuery):
-    # MOV ba’zan telegramda video bo‘lib ketmasligi mumkin, shuning uchun document yuboramiz
     path = STAGE2_DIR / "XJVIDEO.MOV"
     if not path.exists():
         return await call.message.answer("❌ Видео файли топилмади.")
@@ -324,7 +348,8 @@ async def stage2_send_video(call: CallbackQuery):
     )
 
 async def stage2_send_links(call: CallbackQuery):
-    path = STAGE2_DIR / "xj_link.txt"
+    # ✅ sizdagi real nom: xjx_link.txt
+    path = STAGE2_DIR / "xjx_link.txt"
     if not path.exists():
         return await call.message.answer("❌ Линклар файли топилмади.")
     content = path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -359,7 +384,8 @@ async def stage2_done(call: CallbackQuery):
     key = call.data.split(":")[2] + "_done"  # text_done ...
 
     await db.mark_stage2(user_id, key)
-    progress = await db.get_stage2(user_id)
+
+    progress = normalize_stage2(await db.get_stage2(user_id))
     rem = stage2_remaining_list(progress)
 
     await admin_notify(
@@ -379,7 +405,7 @@ async def stage2_done(call: CallbackQuery):
 async def stage2_continue_locked(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
-    progress = await db.get_stage2(user_id)
+    progress = normalize_stage2(await db.get_stage2(user_id))
     rem = stage2_remaining_list(progress)
     await call.message.answer(
         "🔒 Ҳали ҳаммаси кўрилмаган.\n\n<b>Қолди:</b> " + ", ".join(rem),
@@ -391,7 +417,7 @@ async def stage2_continue(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
     if not await db.stage2_all_done(user_id):
-        progress = await db.get_stage2(user_id)
+        progress = normalize_stage2(await db.get_stage2(user_id))
         rem = stage2_remaining_list(progress)
         return await call.message.answer(
             "🔒 Ҳали ҳаммаси кўрилмаган.\n\n<b>Қолди:</b> " + ", ".join(rem),
@@ -409,8 +435,9 @@ async def stage2_continue(call: CallbackQuery):
         reply_markup=kb_stage3_start()
     )
 
+
 # ======================
-# STAGE 3 (11 audio + izoh)
+# STAGE 3
 # ======================
 async def send_stage3_audio(message: Message, user_id: int, idx: int):
     fname = STAGE3_AUDIO_FILES[idx]
@@ -442,6 +469,7 @@ async def stage3_start(call: CallbackQuery):
     await db.set_stage3_idx(user_id, 0)
     await admin_notify(f"🎧 3-босқич бошланди: <code>{user_id}</code>")
     await send_stage3_audio(call.message, user_id, 0)
+
 
 # ======================
 # MAIN
