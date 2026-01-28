@@ -26,3 +26,27 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+# Foydalanuvchi holatini vaqtincha saqlash (oddiy variant)
+user_states = {}
+
+@dp.message(F.text.lower() == "start")
+async def start_reg(m: Message):
+    user_states[m.from_user.id] = "waiting_fullname"
+    await m.answer(
+        "Ro‘yxatdan o‘tishni boshlaymiz ✅\n\n"
+        "Iltimos, ism-familiyangizni yozing."
+    )
+
+@dp.message()
+async def handle_steps(m: Message):
+    user_id = m.from_user.id
+    state = user_states.get(user_id)
+
+    if state == "waiting_fullname":
+        full_name = m.text.strip()
+        user_states[user_id] = "registered"
+        await m.answer(
+            f"Rahmat, {full_name} ✅\n\n"
+            "Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz.\n"
+            "Keyingi bosqichni boshlaymiz."
+        )
