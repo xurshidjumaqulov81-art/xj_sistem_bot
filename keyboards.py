@@ -1,18 +1,29 @@
 # keyboards.py
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-def kb_start():
+
+def kb_start() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🚀 Старт", callback_data="start:begin")
     return kb.as_markup()
 
-def kb_contact():
-    # Contact tugmasi ReplyKeyboardMarkupda bo‘ladi (sizda bor)
-    # bu joy sizda oldin qanday bo‘lsa shunday qolsin
-    return None
 
-def kb_levels():
+def kb_contact() -> ReplyKeyboardMarkup:
+    # Contact so‘rash tugmasi
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 Контакт юбориш", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+
+def kb_levels() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Оддий", callback_data="reg:level:oddiy")
     kb.button(text="Manager", callback_data="reg:level:manager")
@@ -21,14 +32,16 @@ def kb_levels():
     kb.adjust(2)
     return kb.as_markup()
 
-def kb_confirm():
+
+def kb_confirm() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Тасдиқлайман", callback_data="reg:confirm:yes")
     kb.button(text="✏️ Ўзгартирмоқчиман", callback_data="reg:confirm:edit")
     kb.adjust(1)
     return kb.as_markup()
 
-def kb_edit_fields():
+
+def kb_edit_fields() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Исм-фамилия", callback_data="reg:edit:full_name")
     kb.button(text="XJ ID", callback_data="reg:edit:xj_id")
@@ -38,12 +51,14 @@ def kb_edit_fields():
     kb.adjust(2)
     return kb.as_markup()
 
-def kb_done_button(text: str, cb: str):
+
+def kb_done_button(text: str, cb: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text=text, callback_data=cb)
     return kb.as_markup()
 
-def kb_material_menu(progress: dict):
+
+def kb_material_menu(progress: dict) -> InlineKeyboardMarkup:
     # progress keys: matn_done, audio_done, video_done, links_done
     matn = "✅ 📘 Матн" if progress.get("matn_done") else "📘 Матн"
     audio = "✅ 🎧 Аудио" if progress.get("audio_done") else "🎧 Аудио"
@@ -58,16 +73,19 @@ def kb_material_menu(progress: dict):
     ])
 
     missing = []
-    if not progress.get("matn_done"): missing.append("Матн")
-    if not progress.get("audio_done"): missing.append("Аудио")
-    if not progress.get("video_done"): missing.append("Видео")
-    if not progress.get("links_done"): missing.append("Линклар")
+    if not progress.get("matn_done"):
+        missing.append("Матн")
+    if not progress.get("audio_done"):
+        missing.append("Аудио")
+    if not progress.get("video_done"):
+        missing.append("Видео")
+    if not progress.get("links_done"):
+        missing.append("Линклар")
 
-    status_text = f"🔒 Ҳолат: {done_count}/4"
     if missing:
-        status_text += "\nҚолганлар: " + ", ".join(missing)
+        status_text = f"🔒 Ҳолат: {done_count}/4\nҚолганлар: " + ", ".join(missing)
     else:
-        status_text = f"🎉 Ҳолат: 4/4 — тайёр!"
+        status_text = "🎉 Ҳолат: 4/4 — тайёр!"
 
     kb = InlineKeyboardBuilder()
     kb.button(text=matn, callback_data="m2:open:text")
@@ -76,7 +94,7 @@ def kb_material_menu(progress: dict):
     kb.button(text=links, callback_data="m2:open:links")
     kb.adjust(2)
 
-    # status line (noop)
+    # status line
     kb.row(InlineKeyboardButton(text=status_text, callback_data="noop"))
 
     # continue
