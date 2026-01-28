@@ -193,74 +193,51 @@ async def start_begin(call: CallbackQuery):
     await call.message.answer("Рўйхатдан ўтишни бошлаймиз ✅\n\nИсм-фамилиянгизни ёзинг.")
 
 
-# ======================
-# TEXT HANDLER
-# ======================
 import traceback
 
+# ======================
+# TEXT HANDLER (TO‘G‘RI)
+# ======================
 @dp.message(F.text)
 async def text_handler(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        return await message.answer("Формат:\n/broadcast матн")
-
-    text = parts[1]
-
-    users = await db.get_users_overview(limit=10000)
-    sent = 0
-
-    for u in users:
-        try:
-            await bot.send_message(
-                u["user_id"],
-                f"📢 <b>Админдан хабар:</b>\n\n{text}"
-            )
-            sent += 1
-        except:
-            pass
-
-    await message.answer(f"✅ {sent} та фойдаланувчига юборилди.")
     try:
         user_id = message.from_user.id
         state = await db.get_state(user_id)
         text = (message.text or "").strip()
 
-        await admin_notify(
-            f"🟦 TEXT | user={user_id} | state={state} | text={text}"
-        )
+        # LOG (admin ko‘radi)
+        await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
 
-        # ⛔ Boshlash bosilmagan bo‘lsa
-        if state == "":
-            return await message.answer(
-                "Илтимос, аввал ✅ <b>Бошлаш</b> тугмасини босинг.",
-                reply_markup=kb_start()
-            )
+        # ⛔ Agar /broadcast yoki /send bo‘lsa — bu yerda ushlamaymiz
+        # (ular alohida Command handlerda bo‘lishi kerak)
+        if text.startswith("/broadcast") or text.startswith("/send") or text.startswith("/admin"):
+            return
 
-        # 1️⃣ Ism familiya
+        # 1️⃣ Ism-familiya
         if state == REG_NAME:
             if len(text) < 3:
-                return await message.answer("Исм-фамилияни тўлиқ ёзинг.")
+                return await message.answer("Илтимос, исм-фамилияни тўлиқроқ ёзинг.")
             await db.set_user_field(user_id, "full_name", text)
             await db.set_state(user_id, REG_XJ_ID)
-            return await message.answer("Раҳмат ✅\n\nXJ ID ни киритинг (7 хонали).")
+            await admin_notify(f"📝 1-босқич: {text} | <code>{user_id}</code>")
+            return await message.answer("Раҳмат ✅\n\nЭнди XJ ID ни киритинг (7 хонали).")
 
         # 2️⃣ XJ ID
         if state == REG_XJ_ID:
             if not (text.isdigit() and len(text) == 7):
-                return await message.answer("XJ ID 7 хонали рақам бўлиши керак.")
+                return await message.answer("XJ ID 7 хонали рақам бўлиши керак.\nМасалан: 0123456")
             await db.set_user_field(user_id, "xj_id", text)
             await db.set_state(user_id, REG_JOIN_DATE)
-            return await message.answer("XJ га қачон қўшилгансиз?")
+            await admin_notify(f"📝 XJ ID: {text} | <code>{user_id}</code>")
+            return await message.answer("Қабул қилинди ✅\n\nXJ га қачон қўшилгансиз? (эркин ёзинг)")
 
         # 3️⃣ Qo‘shilgan vaqt
         if state == REG_JOIN_DATE:
             await db.set_user_field(user_id, "join_date_text", text)
             await db.set_state(user_id, REG_PHONE)
+            await admin_notify(f"📝 Қўшилган вақт: {text} | <code>{user_id}</code>")
             return await message.answer(
-                "Телефон рақамингизни юборинг 👇",
+                "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг 👇",
                 reply_markup=kb_contact()
             )
 
@@ -271,21 +248,29 @@ async def text_handler(message: Message):
             await db.save_stage3_note(user_id, idx, text)
             await db.set_stage3_waiting(user_id, False)
 
-            next_idx = idx + 1
+            await admin_notify(f"🎧 3-босқич изоҳ | idx={idx+1} | <code>{user_id}</code>\n📝 {text}")
 
+            next_idx = idx + 1
             if next_idx >= len(STAGE3_AUDIO_FILES):
+                await db.set_stage3_completed(user_id, True)
                 await db.set_state(user_id, DONE)
-                return await message.answer("🎉 Барча аудиолар тугади!")
+
+                msg = "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
+                if NEXT_BOT_LINK:
+                    msg += f"Энди навбатдаги босқичга ўтасиз 👇\n{NEXT_BOT_LINK}"
+                else:
+                    msg += "Админ сиз билан боғланади."
+                return await message.answer(msg)
 
             await db.set_stage3_idx(user_id, next_idx)
             return await send_stage3_audio(message, user_id, next_idx)
 
-    except Exception:
-        await admin_notify(
-            "❌ TEXT HANDLER ERROR\n" + traceback.format_exc()
-        )
-        return await message.answer("❌ Ички хато. Админга юборилди.")
+        # Agar state boshqa bo‘lsa — jim turadi (xohlasangiz xabar yozdiramiz)
+        return
 
+    except Exception:
+        await admin_notify("❌ TEXT HANDLER ERROR\n" + traceback.format_exc())
+        return await message.answer("❌ Ички хато. Админга юборилди.")
 # ======================
 # CONTACT HANDLER
 # ======================
