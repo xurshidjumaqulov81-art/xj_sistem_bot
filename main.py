@@ -4,6 +4,14 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from db import (
+    init_db,
+    get_user,
+    upsert_user,
+    get_stage2,
+    set_stage2_done
+)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 dp = Dispatcher()
 
@@ -243,6 +251,8 @@ async def edit_choose(cb: CallbackQuery):
 async def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN topilmadi. Railway Variables ga qo‘ying.")
+        await init_db()
+
     bot = Bot(BOT_TOKEN)
     await dp.start_polling(bot)
 
