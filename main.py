@@ -3,6 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from db import get_stage2, set_stage2_done, upsert_user
 
 from db import (
     init_db,
@@ -258,3 +259,134 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+# ============================
+# STAGE 2 — Inline Material Menu
+# ============================
+
+ST_STAGE2 = "stage2_menu"
+ST_STAGE3 = "stage3_tutorial"
+
+def stage2_done_count(s2) -> int:
+    return (
+        int(s2["text_done"]) +
+        int(s2["audio_done"]) +
+        int(s2["video_done"]) +
+        int(s2["links_done"])
+    )
+
+def stage2_intro_text(s2) -> str:
+    return (
+        "🔹 2-bosqich: XJ kompaniyasi bilan tanishib chiqish\n\n"
+        "Quyidagi materiallarni ketma-ket ko‘rib chiqing.\n"
+        "Hamma 4 tasi bajarilmaguncha “Davom etish” ochilmaydi.\n\n"
+        f"🔒 Holat: {stage2_done_count(s2)} / 4 bajarildi"
+    )
+
+def stage2_kb(s2):
+    def mark(x): return "✅" if x else "▫️"
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"{mark(s2['text_done'])} 📘 Matn", callback_data="s2:open:text")
+    kb.button(text=f"{mark(s2['audio_done'])} 🎧 Audio", callback_data="s2:open:audio")
+    kb.button(text=f"{mark(s2['video_done'])} 🎥 Video", callback_data="s2:open:video")
+    kb.button(text=f"{mark(s2['links_done'])} 🔗 Linklar", callback_data="s2:open:links")
+    kb.adjust(2, 2)
+
+    all_done = (s2["text_done"] and s2["audio_done"] and s2["video_done"] and s2["links_done"])
+    if all_done:
+        kb.button(text="➡️ Davom etish", callback_data="s2:continue")
+    else:
+        kb.button(text="🔒 Davom etish", callback_data="s2:locked")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+def one_confirm_kb(btn_text: str, cb_data: str):
+    kb = InlineKeyboardBuilder()
+    kb.button(text=btn_text, callback_data=cb_data)
+    return kb.as_markup()
+
+async def show_stage2(m: Message):
+    # user stage2 ga o‘tdi deb DBga yozib qo‘yamiz (ixtiyoriy, lekin yaxshi)
+    await upsert_user(m.from_user.id, stage=ST_STAGE2)
+
+    s2 = await get_stage2(m.from_user.id)
+    await m.answer(stage2_intro_text(s2), reply_markup=stage2_kb(s2))
+
+
+# 1-bosqich yakunida shu chiqishi kerak:
+@dp.message(F.text == "✅ Tasdiqlayman")
+async def after_confirm_show_stage2(m: Message):
+    await m.answer("Tabriklayman! Ro‘yxatdan muvaffaqiyatli o‘tdingiz ✅🎉\nKeyingi bosqichga o‘tamiz.")
+    await show_stage2(m)
+
+
+@dp.callback_query(F.data == "s2:locked")
+async def s2_locked(cb: CallbackQuery):
+    await cb.answer("Avval 4 ta materialni ham bajaring 🙂", show_alert=True)
+
+@dp.callback_query(F.data == "s2:continue")
+async def s2_continue(cb: CallbackQuery):
+    await upsert_user(cb.from_user.id, stage=ST_STAGE3)
+    await cb.message.answer("Zo‘r! ✅ 2-bosqich yakunlandi.\n\nEndi 3-bosqichga o‘tamiz 🎧 (keyingi qadamda qo‘shamiz).")
+    await cb.answer()
+
+@dp.callback_query(F.data.startswith("s2:open:"))
+async def s2_open(cb: CallbackQuery):
+    kind = cb.data.split(":")[-1]
+
+    if kind == "text":
+        await cb.message.answer(
+            "📘 XJ kompaniyasi haqida matn\n\n"
+            "XJ — bu zamonaviy biznes tizimi bo‘lib, hamkorlarga daromad topish, "
+            "jamoa qurish va shaxsiy rivojlanish imkonini beradi.\n\n"
+            "O‘qib bo‘lgach tasdiqlang:",
+            reply_markup=one_confirm_kb("✅ O‘qidim", "s2:done:text")
+        )
+
+    elif kind == "audio":
+        await cb.message.answer(
+            "🎧 XJ haqida audio tushuntirish\n\n"
+            "(Hozircha test matn. Keyin mp3 fayl qo‘shamiz.)\n\n"
+            "Tugagach tasdiqlang:",
+            reply_markup=one_confirm_kb("✅ Tingladim", "s2:done:audio")
+        )
+
+    elif kind == "video":
+        await cb.message.answer(
+            "🎥 XJ kompaniyasi haqida video\n\n"
+            "(Hozircha video link qo‘ying.)\n\n"
+            "Ko‘rib bo‘lgach tasdiqlang:",
+            reply_markup=one_confirm_kb("✅ Ko‘rdim", "s2:done:video")
+        )
+
+    elif kind == "links":
+        await cb.message.answer(
+            "🔗 Foydali havolalar:\n"
+            "1) Rasmiy sayt — https://...\n"
+            "2) Telegram kanal — https://...\n"
+            "3) Instagram — https://...\n\n"
+            "Ko‘rib chiqqach tasdiqlang:",
+            reply_markup=one_confirm_kb("✅ Ko‘rdim", "s2:done:links")
+        )
+
+    await cb.answer()
+
+@dp.callback_query(F.data.startswith("s2:done:"))
+async def s2_done(cb: CallbackQuery):
+    kind = cb.data.split(":")[-1]
+    field_map = {
+        "text": "text_done",
+        "audio": "audio_done",
+        "video": "video_done",
+        "links": "links_done",
+    }
+    field = field_map.get(kind)
+    if not field:
+        await cb.answer("Noto‘g‘ri amal", show_alert=True)
+        return
+
+    await set_stage2_done(cb.from_user.id, field)
+    s2 = await get_stage2(cb.from_user.id)
+
+    await cb.message.answer("✅ Bajarildi!\n\n" + stage2_intro_text(s2), reply_markup=stage2_kb(s2))
+    await cb.answer()
