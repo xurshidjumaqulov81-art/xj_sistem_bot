@@ -173,13 +173,18 @@ async def cmd_start(message: Message):
 
     await db.ensure_user(user_id, inviter_id)
 
+    # 🔴 MUHIM: HAMMASINI RESET QILAMIZ
+    await db.set_state(user_id, "")
+    await db.set_stage3_idx(user_id, 0)
+    await db.set_stage3_waiting(user_id, False)
+
     await message.answer(
         "🤖 <b>XJ расмий бот тизимига хуш келибсиз!</b>\n\n"
-        "Бу ерда сиз рўйхатдан ўтасиз ва ишни босқичма-босқич бошлайсиз.\n\n"
         "Бошлаш учун тугмани босинг 👇",
         reply_markup=kb_start()
     )
-    await admin_notify(f"🟢 /start: <code>{user_id}</code>")
+
+    await admin_notify(f"🟢 /start | user=<code>{user_id}</code>")
 
 @dp.callback_query(F.data == "start:begin")
 async def start_begin(call: CallbackQuery):
@@ -191,65 +196,72 @@ async def start_begin(call: CallbackQuery):
 # ======================
 # TEXT HANDLER
 # ======================
+import traceback
+
 @dp.message(F.text)
 async def text_handler(message: Message):
-    user_id = message.from_user.id
-    state = await db.get_state(user_id)
-    text = message.text.strip()
-    await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
-    
+    try:
+        user_id = message.from_user.id
+        state = await db.get_state(user_id)
+        text = (message.text or "").strip()
 
-    # 1️⃣ Ism-familiya
-    if state == REG_NAME:
-        if len(text) < 3:
-            return await message.answer("Илтимос, исм-фамилияни тўлиқроқ ёзинг.")
-        await db.set_user_field(user_id, "full_name", text)
-        await db.set_state(user_id, REG_XJ_ID)
-        await admin_notify(f"📝 1-босқич: {text} | <code>{user_id}</code>")
-        return await message.answer("Раҳмат ✅\n\nЭнди XJ ID ни киритинг (7 хонали).")
-
-    # 2️⃣ XJ ID
-    if state == REG_XJ_ID:
-        if not (text.isdigit() and len(text) == 7):
-            return await message.answer("XJ ID 7 хонали рақам бўлиши керак.\nМасалан: 0123456")
-        await db.set_user_field(user_id, "xj_id", text)
-        await db.set_state(user_id, REG_JOIN_DATE)
-        await admin_notify(f"📝 XJ ID: {text} | <code>{user_id}</code>")
-        return await message.answer("Қабул қилинди ✅\n\nXJ га қачон қўшилгансиз? (эркин ёзинг)")
-
-    # 3️⃣ Qo‘shilgan vaqt
-    if state == REG_JOIN_DATE:
-        await db.set_user_field(user_id, "join_date_text", text)
-        await db.set_state(user_id, REG_PHONE)
-        await admin_notify(f"📝 Қўшилган вақт: {text} | <code>{user_id}</code>")
-        return await message.answer(
-            "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг 👇",
-            reply_markup=kb_contact()
+        await admin_notify(
+            f"🟦 TEXT | user={user_id} | state={state} | text={text}"
         )
 
-    # 3-bosqich izoh
-    if state == STAGE3_WAIT_NOTE:
-        idx = await db.get_stage3_idx(user_id)
-        await db.save_stage3_note(user_id, idx, text)
-        await db.set_stage3_waiting(user_id, False)
+        # ⛔ Boshlash bosilmagan bo‘lsa
+        if state == "":
+            return await message.answer(
+                "Илтимос, аввал ✅ <b>Бошлаш</b> тугмасини босинг.",
+                reply_markup=kb_start()
+            )
 
-        await admin_notify(f"🎧 3-босқич изоҳ | idx={idx+1} | <code>{user_id}</code>\n📝 {text}")
+        # 1️⃣ Ism familiya
+        if state == REG_NAME:
+            if len(text) < 3:
+                return await message.answer("Исм-фамилияни тўлиқ ёзинг.")
+            await db.set_user_field(user_id, "full_name", text)
+            await db.set_state(user_id, REG_XJ_ID)
+            return await message.answer("Раҳмат ✅\n\nXJ ID ни киритинг (7 хонали).")
 
-        next_idx = idx + 1
-        if next_idx >= len(STAGE3_AUDIO_FILES):
-            await db.set_stage3_completed(user_id, True)
-            await db.set_state(user_id, DONE)
+        # 2️⃣ XJ ID
+        if state == REG_XJ_ID:
+            if not (text.isdigit() and len(text) == 7):
+                return await message.answer("XJ ID 7 хонали рақам бўлиши керак.")
+            await db.set_user_field(user_id, "xj_id", text)
+            await db.set_state(user_id, REG_JOIN_DATE)
+            return await message.answer("XJ га қачон қўшилгансиз?")
 
-            msg = "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
-            if NEXT_BOT_LINK:
-                msg += f"Энди навбатдаги босқичга ўтасиз 👇\n{NEXT_BOT_LINK}"
-            else:
-                msg += "Админ сиз билан боғланади."
-            return await message.answer(msg)
+        # 3️⃣ Qo‘shilgan vaqt
+        if state == REG_JOIN_DATE:
+            await db.set_user_field(user_id, "join_date_text", text)
+            await db.set_state(user_id, REG_PHONE)
+            return await message.answer(
+                "Телефон рақамингизни юборинг 👇",
+                reply_markup=kb_contact()
+            )
 
-        await db.set_stage3_idx(user_id, next_idx)
-        return await send_stage3_audio(message, user_id, next_idx)
+        # 🎧 STAGE 3 — audio izohi
+        if state == STAGE3_WAIT_NOTE:
+            idx = await db.get_stage3_idx(user_id)
 
+            await db.save_stage3_note(user_id, idx, text)
+            await db.set_stage3_waiting(user_id, False)
+
+            next_idx = idx + 1
+
+            if next_idx >= len(STAGE3_AUDIO_FILES):
+                await db.set_state(user_id, DONE)
+                return await message.answer("🎉 Барча аудиолар тугади!")
+
+            await db.set_stage3_idx(user_id, next_idx)
+            return await send_stage3_audio(message, user_id, next_idx)
+
+    except Exception:
+        await admin_notify(
+            "❌ TEXT HANDLER ERROR\n" + traceback.format_exc()
+        )
+        return await message.answer("❌ Ички хато. Админга юборилди.")
 
 # ======================
 # CONTACT HANDLER
@@ -480,8 +492,11 @@ async def send_stage3_audio(message: Message, user_id: int, idx: int):
 async def stage3_start(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
+
     await db.set_stage3_idx(user_id, 0)
-    await admin_notify(f"🎧 3-босқич бошланди: <code>{user_id}</code>")
+    await db.set_stage3_waiting(user_id, True)
+    await db.set_state(user_id, STAGE3_WAIT_NOTE)
+
     await send_stage3_audio(call.message, user_id, 0)
 
 
