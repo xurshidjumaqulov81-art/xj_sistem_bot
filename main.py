@@ -153,7 +153,6 @@ async def text_handler(message: Message):
             await db.set_stage3_waiting(user_id, False)
             await db.set_state(user_id, DONE)
 
-            return await message.answer(
               text = "✅ <b>Сиз тўлиқ дарсликни олдингиз!</b>\n\n"
 
 if NEXT_BOT_LINK:
