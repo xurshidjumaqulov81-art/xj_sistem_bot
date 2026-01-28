@@ -200,8 +200,6 @@ import traceback
 
 @dp.message(F.text)
 async def text_handler(message: Message):
-    @dp.message(Command("broadcast"))
-async def cmd_broadcast(message: Message):
     if not is_admin(message.from_user.id):
         return
 
