@@ -173,7 +173,6 @@ async def cmd_start(message: Message):
 
     await db.ensure_user(user_id, inviter_id)
 
-    await db.set_state(user_id, "")  # startda state bo'sh bo'lishi mumkin
     await message.answer(
         "🤖 <b>XJ расмий бот тизимига хуш келибсиз!</b>\n\n"
         "Бу ерда сиз рўйхатдан ўтасиз ва ишни босқичма-босқич бошлайсиз.\n\n"
@@ -196,8 +195,9 @@ async def start_begin(call: CallbackQuery):
 async def text_handler(message: Message):
     user_id = message.from_user.id
     state = await db.get_state(user_id)
-    await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
     text = message.text.strip()
+    await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
+    
 
     # 1️⃣ Ism-familiya
     if state == REG_NAME:
