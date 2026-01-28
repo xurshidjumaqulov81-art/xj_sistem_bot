@@ -230,16 +230,25 @@ async def save_stage3_note(user_id: int, idx: int, note: str):
 # =========================
 # ADMIN OVERVIEW
 # =========================
-async def get_users_overview(limit: int = 50) -> list[dict]:
+async def reset_stage2(user_id: int):
     pool = _p()
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT user_id, full_name, xj_id, state,
-                   stage2_text_done, stage2_audio_done, stage2_video_done, stage2_links_done,
-                   stage3_idx, stage3_waiting, stage3_completed,
-                   created_at
-            FROM users
-            ORDER BY created_at DESC
-            LIMIT $1
-        """, limit)
-        return [dict(r) for r in rows]
+        await conn.execute("""
+            UPDATE users SET
+                stage2_text_done=FALSE,
+                stage2_audio_done=FALSE,
+                stage2_video_done=FALSE,
+                stage2_links_done=FALSE
+            WHERE user_id=$1
+        """, user_id)
+
+
+# ✅ HAMMA USER ID LARNI OLISH (broadcast uchun)
+async def get_all_user_ids(limit: int = 100000) -> list[int]:
+    pool = _p()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT user_id FROM users ORDER BY created_at DESC LIMIT $1",
+            limit
+        )
+        return [int(r["user_id"]) for r in rows]
