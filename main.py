@@ -304,6 +304,7 @@ async def reg_confirm_yes(call: CallbackQuery):
 
     try:
         await db.set_state(user_id, MATERIAL_MENU)
+        await db.reset_stage2(user_id)
 
         progress_raw = await db.get_stage2(user_id)
         progress = normalize_stage2(progress_raw)
