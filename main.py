@@ -3,14 +3,12 @@ import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from db import get_stage2, set_stage2_done, upsert_user
 
 from db import (
     init_db,
-    get_user,
     upsert_user,
     get_stage2,
-    set_stage2_done
+    set_stage2_done,
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -28,9 +26,14 @@ ST_LEVEL = "reg_level"
 ST_CONFIRM = "reg_confirm"
 ST_EDIT_MENU = "reg_edit_menu"
 
+# ====== STAGE 2 ======
+ST_STAGE2 = "stage2_menu"
+ST_STAGE3 = "stage3_tutorial"
+
 LEVELS = ["Oddiy", "Manager", "Bronza", "Silver"]
 
-def get_user(uid: int) -> dict:
+
+def get_mem_user(uid: int) -> dict:
     if uid not in data_store:
         data_store[uid] = {
             "full_name": None,
@@ -41,6 +44,7 @@ def get_user(uid: int) -> dict:
         }
     return data_store[uid]
 
+
 def level_kb():
     kb = InlineKeyboardBuilder()
     for lv in LEVELS:
@@ -48,12 +52,14 @@ def level_kb():
     kb.adjust(2)
     return kb.as_markup()
 
+
 def confirm_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Tasdiqlayman", callback_data="confirm:yes")
     kb.button(text="✏️ O‘zgartirmoqchiman", callback_data="confirm:edit")
     kb.adjust(1)
     return kb.as_markup()
+
 
 def edit_menu_kb():
     kb = InlineKeyboardBuilder()
@@ -65,12 +71,14 @@ def edit_menu_kb():
     kb.adjust(2)
     return kb.as_markup()
 
+
 def contact_kb():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📱 Kontakt yuborish", request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
+
 
 def format_summary(u: dict) -> str:
     phone = u["phone"] or "-"
@@ -84,6 +92,62 @@ def format_summary(u: dict) -> str:
         "Tasdiqlaysizmi?"
     )
 
+
+# ============================
+# STAGE 2 — Inline Material Menu
+# ============================
+
+def stage2_done_count(s2) -> int:
+    return (
+        int(s2["text_done"]) +
+        int(s2["audio_done"]) +
+        int(s2["video_done"]) +
+        int(s2["links_done"])
+    )
+
+
+def stage2_intro_text(s2) -> str:
+    return (
+        "🔹 2-bosqich: XJ kompaniyasi bilan tanishib chiqish\n\n"
+        "Quyidagi materiallarni ketma-ket ko‘rib chiqing.\n"
+        "Hamma 4 tasi bajarilmaguncha “Davom etish” ochilmaydi.\n\n"
+        f"🔒 Holat: {stage2_done_count(s2)} / 4 bajarildi"
+    )
+
+
+def stage2_kb(s2):
+    def mark(x): return "✅" if x else "▫️"
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"{mark(s2['text_done'])} 📘 Matn", callback_data="s2:open:text")
+    kb.button(text=f"{mark(s2['audio_done'])} 🎧 Audio", callback_data="s2:open:audio")
+    kb.button(text=f"{mark(s2['video_done'])} 🎥 Video", callback_data="s2:open:video")
+    kb.button(text=f"{mark(s2['links_done'])} 🔗 Linklar", callback_data="s2:open:links")
+    kb.adjust(2, 2)
+
+    all_done = (s2["text_done"] and s2["audio_done"] and s2["video_done"] and s2["links_done"])
+    if all_done:
+        kb.button(text="➡️ Davom etish", callback_data="s2:continue")
+    else:
+        kb.button(text="🔒 Davom etish", callback_data="s2:locked")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+
+def one_confirm_kb(btn_text: str, cb_data: str):
+    kb = InlineKeyboardBuilder()
+    kb.button(text=btn_text, callback_data=cb_data)
+    return kb.as_markup()
+
+
+async def show_stage2(msg: Message):
+    # stage2 ga o‘tdi deb DBga yozib qo‘yamiz (ixtiyoriy)
+    await upsert_user(msg.from_user.id, stage=ST_STAGE2)
+
+    s2 = await get_stage2(msg.from_user.id)
+    await msg.answer(stage2_intro_text(s2), reply_markup=stage2_kb(s2))
+
+
 # ====== START ======
 @dp.message(F.text == "/start")
 async def cmd_start(m: Message):
@@ -92,19 +156,21 @@ async def cmd_start(m: Message):
         "Boshlash uchun 'Start' deb yozing."
     )
 
+
 @dp.message(F.text.lower() == "start")
 async def start_registration(m: Message):
     uid = m.from_user.id
-    get_user(uid)  # init
+    get_mem_user(uid)  # init
     user_stage[uid] = ST_FULLNAME
     await m.answer("Ro‘yxatdan o‘tishni boshlaymiz ✅\nIltimos, ism-familiyangizni yozing.")
+
 
 # ====== TEXT ROUTER ======
 @dp.message(F.text)
 async def text_router(m: Message):
     uid = m.from_user.id
     stage = user_stage.get(uid)
-    u = get_user(uid)
+    u = get_mem_user(uid)
 
     # 1) FULL NAME
     if stage == ST_FULLNAME:
@@ -165,12 +231,13 @@ async def text_router(m: Message):
     # Default
     await m.answer("Boshlash uchun /start bosing, keyin 'Start' deb yozing.")
 
+
 # ====== CONTACT HANDLER ======
 @dp.message(F.contact)
 async def contact_handler(m: Message):
     uid = m.from_user.id
     stage = user_stage.get(uid)
-    u = get_user(uid)
+    u = get_mem_user(uid)
 
     if stage != ST_PHONE:
         await m.answer("Kontakt qabul qilindi, lekin hozir bu bosqich emas. /start dan boshlang.")
@@ -183,12 +250,13 @@ async def contact_handler(m: Message):
     user_stage[uid] = ST_LEVEL
     await m.answer("Rahmat ✅\nEndi darajangizni tanlang:", reply_markup=level_kb())
 
+
 # ====== LEVEL CALLBACK ======
 @dp.callback_query(F.data.startswith("level:"))
 async def level_pick(cb: CallbackQuery):
     uid = cb.from_user.id
     stage = user_stage.get(uid)
-    u = get_user(uid)
+    u = get_mem_user(uid)
 
     if stage != ST_LEVEL:
         await cb.answer("Bu bosqich hozir aktiv emas.", show_alert=False)
@@ -201,18 +269,36 @@ async def level_pick(cb: CallbackQuery):
     await cb.message.answer(format_summary(u), reply_markup=confirm_kb())
     await cb.answer()
 
+
 # ====== CONFIRM / EDIT ======
 @dp.callback_query(F.data == "confirm:yes")
 async def confirm_yes(cb: CallbackQuery):
     uid = cb.from_user.id
-    u = get_user(uid)
+    u = get_mem_user(uid)
+
+    # DBga saqlash (ixtiyoriy, lekin kerak)
+    await upsert_user(
+        tg_id=uid,
+        full_name=u["full_name"],
+        xj_id=u["xj_id"],
+        join_date_text=u["join_date_text"],
+        phone=u["phone"],
+        level=u["level"],
+        stage=ST_STAGE2
+    )
+
     user_stage[uid] = "done"
 
     await cb.message.answer(
         "Tabriklayman! Ro‘yxatdan muvaffaqiyatli o‘tdingiz ✅🎉\n"
         "Keyingi bosqichga o‘tamiz."
     )
+
+    # ✅ 2-bosqichni shu yerda chiqaramiz
+    await show_stage2(cb.message)
+
     await cb.answer()
+
 
 @dp.callback_query(F.data == "confirm:edit")
 async def confirm_edit(cb: CallbackQuery):
@@ -221,11 +307,10 @@ async def confirm_edit(cb: CallbackQuery):
     await cb.message.answer("Qaysi ma’lumotni o‘zgartirasiz?", reply_markup=edit_menu_kb())
     await cb.answer()
 
+
 @dp.callback_query(F.data.startswith("edit:"))
 async def edit_choose(cb: CallbackQuery):
     uid = cb.from_user.id
-    u = get_user(uid)
-
     field = cb.data.split("edit:", 1)[1]
 
     if field == "full_name":
@@ -248,87 +333,19 @@ async def edit_choose(cb: CallbackQuery):
 
     await cb.answer()
 
-# ====== RUN ======
-async def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN topilmadi. Railway Variables ga qo‘ying.")
-        await init_db()
 
-    bot = Bot(BOT_TOKEN)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-# ============================
-# STAGE 2 — Inline Material Menu
-# ============================
-
-ST_STAGE2 = "stage2_menu"
-ST_STAGE3 = "stage3_tutorial"
-
-def stage2_done_count(s2) -> int:
-    return (
-        int(s2["text_done"]) +
-        int(s2["audio_done"]) +
-        int(s2["video_done"]) +
-        int(s2["links_done"])
-    )
-
-def stage2_intro_text(s2) -> str:
-    return (
-        "🔹 2-bosqich: XJ kompaniyasi bilan tanishib chiqish\n\n"
-        "Quyidagi materiallarni ketma-ket ko‘rib chiqing.\n"
-        "Hamma 4 tasi bajarilmaguncha “Davom etish” ochilmaydi.\n\n"
-        f"🔒 Holat: {stage2_done_count(s2)} / 4 bajarildi"
-    )
-
-def stage2_kb(s2):
-    def mark(x): return "✅" if x else "▫️"
-
-    kb = InlineKeyboardBuilder()
-    kb.button(text=f"{mark(s2['text_done'])} 📘 Matn", callback_data="s2:open:text")
-    kb.button(text=f"{mark(s2['audio_done'])} 🎧 Audio", callback_data="s2:open:audio")
-    kb.button(text=f"{mark(s2['video_done'])} 🎥 Video", callback_data="s2:open:video")
-    kb.button(text=f"{mark(s2['links_done'])} 🔗 Linklar", callback_data="s2:open:links")
-    kb.adjust(2, 2)
-
-    all_done = (s2["text_done"] and s2["audio_done"] and s2["video_done"] and s2["links_done"])
-    if all_done:
-        kb.button(text="➡️ Davom etish", callback_data="s2:continue")
-    else:
-        kb.button(text="🔒 Davom etish", callback_data="s2:locked")
-    kb.adjust(2, 2, 1)
-    return kb.as_markup()
-
-def one_confirm_kb(btn_text: str, cb_data: str):
-    kb = InlineKeyboardBuilder()
-    kb.button(text=btn_text, callback_data=cb_data)
-    return kb.as_markup()
-
-async def show_stage2(m: Message):
-    # user stage2 ga o‘tdi deb DBga yozib qo‘yamiz (ixtiyoriy, lekin yaxshi)
-    await upsert_user(m.from_user.id, stage=ST_STAGE2)
-
-    s2 = await get_stage2(m.from_user.id)
-    await m.answer(stage2_intro_text(s2), reply_markup=stage2_kb(s2))
-
-
-# 1-bosqich yakunida shu chiqishi kerak:
-@dp.message(F.text == "✅ Tasdiqlayman")
-async def after_confirm_show_stage2(m: Message):
-    await m.answer("Tabriklayman! Ro‘yxatdan muvaffaqiyatli o‘tdingiz ✅🎉\nKeyingi bosqichga o‘tamiz.")
-    await show_stage2(m)
-
-
+# ====== STAGE 2 callbacks ======
 @dp.callback_query(F.data == "s2:locked")
 async def s2_locked(cb: CallbackQuery):
     await cb.answer("Avval 4 ta materialni ham bajaring 🙂", show_alert=True)
+
 
 @dp.callback_query(F.data == "s2:continue")
 async def s2_continue(cb: CallbackQuery):
     await upsert_user(cb.from_user.id, stage=ST_STAGE3)
     await cb.message.answer("Zo‘r! ✅ 2-bosqich yakunlandi.\n\nEndi 3-bosqichga o‘tamiz 🎧 (keyingi qadamda qo‘shamiz).")
     await cb.answer()
+
 
 @dp.callback_query(F.data.startswith("s2:open:"))
 async def s2_open(cb: CallbackQuery):
@@ -371,6 +388,7 @@ async def s2_open(cb: CallbackQuery):
 
     await cb.answer()
 
+
 @dp.callback_query(F.data.startswith("s2:done:"))
 async def s2_done(cb: CallbackQuery):
     kind = cb.data.split(":")[-1]
@@ -390,3 +408,18 @@ async def s2_done(cb: CallbackQuery):
 
     await cb.message.answer("✅ Bajarildi!\n\n" + stage2_intro_text(s2), reply_markup=stage2_kb(s2))
     await cb.answer()
+
+
+# ====== RUN ======
+async def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN topilmadi. Railway Variables ga qo‘ying.")
+
+    await init_db()
+
+    bot = Bot(BOT_TOKEN)
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
