@@ -200,6 +200,31 @@ import traceback
 
 @dp.message(F.text)
 async def text_handler(message: Message):
+    @dp.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        return await message.answer("Формат:\n/broadcast матн")
+
+    text = parts[1]
+
+    users = await db.get_users_overview(limit=10000)
+    sent = 0
+
+    for u in users:
+        try:
+            await bot.send_message(
+                u["user_id"],
+                f"📢 <b>Админдан хабар:</b>\n\n{text}"
+            )
+            sent += 1
+        except:
+            pass
+
+    await message.answer(f"✅ {sent} та фойдаланувчига юборилди.")
     try:
         user_id = message.from_user.id
         state = await db.get_state(user_id)
