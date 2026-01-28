@@ -18,6 +18,16 @@ async def init_db():
         stage TEXT
     );
     """)
+    await pool.execute("""
+    CREATE TABLE IF NOT EXISTS stage2_progress (
+        tg_id BIGINT PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
+        text_done BOOLEAN NOT NULL DEFAULT FALSE,
+        audio_done BOOLEAN NOT NULL DEFAULT FALSE,
+        video_done BOOLEAN NOT NULL DEFAULT FALSE,
+        links_done BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    """)
 
 async def get_user(tg_id: int):
     return await pool.fetchrow(
