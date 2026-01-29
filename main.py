@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 from pathlib import Path
+import traceback
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
@@ -34,7 +35,7 @@ STAGE3_INTRO = "STAGE3_INTRO"
 STAGE3_WAIT_NOTE = "STAGE3_WAIT_NOTE"
 DONE = "DONE"
 
-# Stage3 audio list
+# Stage3 audio list (11 ta)
 STAGE3_AUDIO_FILES = [
     "10-ASOS DARSLIGI.mp3",
     "1-ASOS.mp3",
@@ -52,15 +53,10 @@ STAGE3_AUDIO_FILES = [
 bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-
 # ======================
 # HELPERS
 # ======================
 def normalize_stage2(progress) -> dict:
-    """
-    db.get_stage2() turlicha nom bilan qaytarishi mumkin.
-    Har doim kb_material_menu() uchun 4 ta keyni to'ldirib beradi.
-    """
     if not isinstance(progress, dict):
         progress = {}
 
@@ -102,7 +98,6 @@ def stage2_remaining_list(progress: dict) -> list[str]:
         rem.append("🔗 Линклар")
     return rem
 
-
 # ======================
 # STARTUP / SHUTDOWN
 # ======================
@@ -114,34 +109,9 @@ async def on_shutdown():
     await db.close()
     print("🛑 DB closed")
 
-
-async def reset_stage2(user_id: int):
-    pool = _p()
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            UPDATE users SET
-                stage2_text_done=FALSE,
-                stage2_audio_done=FALSE,
-                stage2_video_done=FALSE,
-                stage2_links_done=FALSE
-            WHERE user_id=$1
-        """, user_id)
-
-
-# ✅ HAMMA USER ID LARNI OLISH (broadcast uchun)
-async def get_all_user_ids(limit: int = 100000) -> list[int]:
-    pool = _p()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT user_id FROM users ORDER BY created_at DESC LIMIT $1",
-            limit
-        )
-        return [int(r["user_id"]) for r in rows]
-
 # ======================
 # ADMIN
 # ======================
-
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
@@ -149,6 +119,7 @@ async def cmd_admin(message: Message):
     items = await db.get_users_overview(limit=30)
     if not items:
         return await message.answer("Ҳозирча фойдаланувчи йўқ.")
+
     lines = ["<b>Сўнгги 30 фойдаланувчи:</b>\n"]
     for u in items:
         s2 = []
@@ -162,11 +133,13 @@ async def cmd_admin(message: Message):
             f"2-босқич: {''.join(s2)} | 3-босқич idx: <b>{u['stage3_idx']}</b>\n"
             "—"
         )
-    lines.append("\n<b>Хабар юбориш:</b>\n"
-                 "<code>/send USER_ID матн</code>\n"
-                 "<code>/broadcast матн</code>")
-    await message.answer("\n".join(lines))
 
+    lines.append(
+        "\n<b>Хабар юбориш:</b>\n"
+        "<code>/send USER_ID матн</code>\n"
+        "<code>/broadcast матн</code>"
+    )
+    await message.answer("\n".join(lines))
 
 @dp.message(Command("send"))
 async def cmd_send(message: Message):
@@ -185,8 +158,6 @@ async def cmd_send(message: Message):
     except Exception as e:
         await message.answer(f"❌ Юборилмади: {e}")
 
-
-# ✅ HAMMAGA XABAR
 @dp.message(Command("broadcast"))
 async def cmd_broadcast(message: Message):
     if not is_admin(message.from_user.id):
@@ -196,23 +167,19 @@ async def cmd_broadcast(message: Message):
     if len(parts) < 2:
         return await message.answer("Формат: <code>/broadcast матн</code>")
 
-    text = parts[1]
-
+    txt = parts[1]
     users = await db.get_users_overview(limit=100000)
 
     sent = 0
     for u in users:
         try:
-            await bot.send_message(
-                u["user_id"],
-                f"📢 <b>Админдан хабар:</b>\n\n{text}"
-            )
+            await bot.send_message(u["user_id"], f"📢 <b>Админдан хабар:</b>\n\n{txt}")
             sent += 1
         except:
             pass
 
     await message.answer(f"✅ {sent} та фойдаланувчига юборилди.")
-    
+
 # ======================
 # /start
 # ======================
@@ -227,13 +194,14 @@ async def cmd_start(message: Message):
 
     await db.ensure_user(user_id, inviter_id)
 
-    # 🔴 MUHIM: HAMMASINI RESET QILAMIZ
+    # MUHIM: startda state bo'sh bo'ladi
     await db.set_state(user_id, "")
     await db.set_stage3_idx(user_id, 0)
     await db.set_stage3_waiting(user_id, False)
 
     await message.answer(
-        " <b>👋 Салом!Мен XJ расмий ботингизман. XJ да натижага эришишингиз учун сизга босқичма-босқич ёрдам бераман.!</b>\n\n"
+        "<b>👋 Салом! Мен XJ расмий ботингизман.</b>\n\n"
+        "XJ да натижага эришишингиз учун сизга босқичма-босқич ёрдам бераман.\n\n"
         "Бошлаш учун қуйидаги тугмани босинг 👇",
         reply_markup=kb_start()
     )
@@ -244,15 +212,16 @@ async def cmd_start(message: Message):
 async def start_begin(call: CallbackQuery):
     await call.answer()
     await db.set_state(call.from_user.id, REG_NAME)
-    await call.message.answer("🤝 Азиз дўстим!
-Сиз билан биргаликда рўйхатдан ўтишни бошлаймиз  ✅\n\n✍️ Илтимос, исм ва фамилиянгизни киритинг.
-(Намуна: Ali Alijonov)")
 
-
-import traceback
+    # ✅ B) Ism familiya namuna bilan (to‘g‘ri string!)
+    await call.message.answer(
+        "Рўйхатдан ўтишни бошлаймиз ✅\n\n"
+        "✍️ Илтимос, исм ва фамилиянгизни киритинг.\n"
+        "(Намуна: Ali Alijonov)"
+    )
 
 # ======================
-# TEXT HANDLER (TO‘G‘RI)
+# TEXT HANDLER
 # ======================
 @dp.message(F.text)
 async def text_handler(message: Message):
@@ -261,50 +230,55 @@ async def text_handler(message: Message):
         state = await db.get_state(user_id)
         text = (message.text or "").strip()
 
-        # LOG (admin ko‘radi)
+        # admin log
         await admin_notify(f"🟦 TEXT | user={user_id} | state={state} | text={text}")
 
-        # ⛔ Agar /broadcast yoki /send bo‘lsa — bu yerda ushlamaymiz
-        # (ular alohida Command handlerda bo‘lishi kerak)
-        if text.startswith("/broadcast") or text.startswith("/send") or text.startswith("/admin"):
+        # komandalar bu yerda ushlanmaydi
+        if text.startswith("/admin") or text.startswith("/send") or text.startswith("/broadcast"):
             return
 
-        # 1️⃣ Ism-familiya
+        # Agar hali "Бошлаш" bosilmagan bo‘lsa
+        if state == "":
+            return await message.answer(
+                "Илтимос, аввал ✅ <b>Бошлаш</b> тугмасини босинг.",
+                reply_markup=kb_start()
+            )
+
+        # 1) Ism-familiya
         if state == REG_NAME:
             if len(text) < 3:
                 return await message.answer("Илтимос, исм-фамилияни тўлиқроқ ёзинг.")
             await db.set_user_field(user_id, "full_name", text)
             await db.set_state(user_id, REG_XJ_ID)
-            await admin_notify(f"📝 1-босқич: {text} | <code>{user_id}</code>")
             return await message.answer("Раҳмат ✅\n\nЭнди XJ ID ни киритинг (7 хонали).")
 
-        # 2️⃣ XJ ID
+        # 2) XJ ID
         if state == REG_XJ_ID:
             if not (text.isdigit() and len(text) == 7):
                 return await message.answer("XJ ID 7 хонали рақам бўлиши керак.\nМасалан: 0123456")
             await db.set_user_field(user_id, "xj_id", text)
             await db.set_state(user_id, REG_JOIN_DATE)
-            await admin_notify(f"📝 XJ ID: {text} | <code>{user_id}</code>")
             return await message.answer("Қабул қилинди ✅\n\nXJ га қачон қўшилгансиз? (эркин ёзинг)")
 
-        # 3️⃣ Qo‘shilgan vaqt
+        # 3) Join date
         if state == REG_JOIN_DATE:
             await db.set_user_field(user_id, "join_date_text", text)
             await db.set_state(user_id, REG_PHONE)
-            await admin_notify(f"📝 Қўшилган вақт: {text} | <code>{user_id}</code>")
+
+            # ✅ G) Telefon namuna bilan
             return await message.answer(
-                "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг Масалан +998991234567 👇",
+                "Тушунарли ✅\n\n"
+                "📞 Энди телефон рақамингизни юборинг.\n"
+                "(Намуна: +998991234567) 👇",
                 reply_markup=kb_contact()
             )
 
-        # 🎧 STAGE 3 — audio izohi
+        # Stage3 izoh
         if state == STAGE3_WAIT_NOTE:
             idx = await db.get_stage3_idx(user_id)
 
             await db.save_stage3_note(user_id, idx, text)
             await db.set_stage3_waiting(user_id, False)
-
-            await admin_notify(f"🎧 3-босқич изоҳ | idx={idx+1} | <code>{user_id}</code>\n📝 {text}")
 
             next_idx = idx + 1
             if next_idx >= len(STAGE3_AUDIO_FILES):
@@ -321,12 +295,12 @@ async def text_handler(message: Message):
             await db.set_stage3_idx(user_id, next_idx)
             return await send_stage3_audio(message, user_id, next_idx)
 
-        # Agar state boshqa bo‘lsa — jim turadi (xohlasangiz xabar yozdiramiz)
         return
 
     except Exception:
         await admin_notify("❌ TEXT HANDLER ERROR\n" + traceback.format_exc())
         return await message.answer("❌ Ички хато. Админга юборилди.")
+
 # ======================
 # CONTACT HANDLER
 # ======================
@@ -338,12 +312,10 @@ async def contact_handler(message: Message):
     if state == REG_PHONE:
         await db.set_user_field(user_id, "phone", message.contact.phone_number)
         await db.set_state(user_id, REG_LEVEL)
-        await admin_notify(f"📞 Телефон: {message.contact.phone_number} | <code>{user_id}</code>")
         return await message.answer(
             "Раҳмат ✅\n\nДаражангизни танланг:",
             reply_markup=kb_levels()
         )
-
 
 # ======================
 # REG LEVEL
@@ -370,7 +342,6 @@ async def reg_level(call: CallbackQuery):
     )
     await call.message.answer(text, reply_markup=kb_confirm())
 
-
 # ======================
 # REG CONFIRM
 # ======================
@@ -383,26 +354,16 @@ async def reg_confirm_yes(call: CallbackQuery):
         await db.set_state(user_id, MATERIAL_MENU)
         await db.reset_stage2(user_id)
 
-        progress_raw = await db.get_stage2(user_id)
-        progress = normalize_stage2(progress_raw)
-
-        await admin_notify(
-            f"✅ CONFIRM YES OK | user=<code>{user_id}</code>\n"
-            f"raw={progress_raw}\n"
-            f"norm={progress}"
-        )
+        progress = normalize_stage2(await db.get_stage2(user_id))
 
         return await call.message.answer(
             "🎉 <b>Рўйхатдан муваффақиятли ўтдингиз!</b>\n\n"
             "Энди XJ билан тўлиқ танишиб чиқамиз.",
             reply_markup=kb_material_menu(progress)
         )
-
     except Exception as e:
-        # xatoni ham userga, ham adminga chiqaramiz
         await admin_notify(f"❌ CONFIRM YES ERROR | user=<code>{user_id}</code>\n{repr(e)}")
         return await call.message.answer(f"❌ Хато чиқди: <code>{repr(e)}</code>")
-
 
 # ======================
 # STAGE 2 MATERIALS (content/stage4)
@@ -438,13 +399,10 @@ async def stage2_send_video(call: CallbackQuery):
     )
 
 async def stage2_send_links(call: CallbackQuery):
-    # ✅ sizdagi real nom: xj_link.txt
     path = STAGE2_DIR / "xjxj_link.txt"
     if not path.exists():
         return await call.message.answer("❌ Линклар файли топилмади.")
-    content = path.read_text(encoding="utf-8", errors="ignore").strip()
-    if not content:
-        content = "—"
+    content = path.read_text(encoding="utf-8", errors="ignore").strip() or "—"
     await call.message.answer(
         f"🔗 <b>Фойдали ҳаволалар:</b>\n{content}",
         reply_markup=kb_done_button("✅ Кўрдим", "m2:done:links")
@@ -453,10 +411,7 @@ async def stage2_send_links(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("m2:open:"))
 async def stage2_open(call: CallbackQuery):
     await call.answer()
-    user_id = call.from_user.id
     item = call.data.split(":")[2]
-
-    await admin_notify(f"📂 2-босқич очди: {item} | <code>{user_id}</code>")
 
     if item == "text":
         return await stage2_send_text(call)
@@ -471,17 +426,12 @@ async def stage2_open(call: CallbackQuery):
 async def stage2_done(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
-    key = call.data.split(":")[2] + "_done"  # text_done ...
+    key = call.data.split(":")[2] + "_done"  # text_done/audio_done...
 
     await db.mark_stage2(user_id, key)
 
     progress = normalize_stage2(await db.get_stage2(user_id))
     rem = stage2_remaining_list(progress)
-
-    await admin_notify(
-        f"✅ 2-босқич тасдиқ: {key} | <code>{user_id}</code>\n"
-        f"Қолди: {', '.join(rem) if rem else 'Йўқ'}"
-    )
 
     msg = "Сақланди ✅"
     if rem:
@@ -506,6 +456,7 @@ async def stage2_continue_locked(call: CallbackQuery):
 async def stage2_continue(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
+
     if not await db.stage2_all_done(user_id):
         progress = normalize_stage2(await db.get_stage2(user_id))
         rem = stage2_remaining_list(progress)
@@ -515,16 +466,16 @@ async def stage2_continue(call: CallbackQuery):
         )
 
     await db.set_state(user_id, STAGE3_INTRO)
-    await admin_notify(f"➡️ 3-босқичга ўтди: <code>{user_id}</code>")
 
+    # ✅ Q) Intro matni: "Нимани тушунсангиз, изоҳ қилиб менга ёзинг." qo‘shildi
     await call.message.answer(
         "🎧 <b>3-босқич: Ишни бошлаш учун тўлиқ дарслик</b>\n\n"
         "Ҳозир сизга 11 та аудио кетма-кет берилади.\n"
         "Ҳар аудиодан кейин: <b>Нимани тушундингиз?</b> деб сўрайман.\n\n"
+        "Нимани тушунсангиз, изоҳ қилиб менга ёзинг.\n\n"
         "Бошлаймиз ✅",
         reply_markup=kb_stage3_start()
     )
-
 
 # ======================
 # STAGE 3
@@ -532,8 +483,9 @@ async def stage2_continue(call: CallbackQuery):
 async def send_stage3_audio(message: Message, user_id: int, idx: int):
     fname = STAGE3_AUDIO_FILES[idx]
     path = STAGE3_DIR / fname
+
     if not path.exists():
-        await admin_notify(f"❌ 3-босқич аудио топилмади: {fname} | <code>{user_id}</code>")
+        await admin_notify(f"❌ 3-босқич аудио топилмади: {fname} | user={user_id}")
         return await message.answer(
             "❌ Аудио файл топилмади.\n\n"
             f"Керакли файл: <code>{fname}</code>\n"
@@ -562,7 +514,6 @@ async def stage3_start(call: CallbackQuery):
     await db.set_state(user_id, STAGE3_WAIT_NOTE)
 
     await send_stage3_audio(call.message, user_id, 0)
-
 
 # ======================
 # MAIN
