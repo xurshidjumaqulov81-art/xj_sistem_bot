@@ -67,3 +67,11 @@ def kb_stage3_start():
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Бошлаймиз", callback_data="s3:start")
     return kb.as_markup()
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+def kb_confirm():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Ҳа, тасдиқлайман", callback_data="reg:confirm:yes")
+    kb.button(text="✏️ Таҳрирлаш", callback_data="reg:confirm:edit")
+    kb.adjust(1)
+    return kb.as_markup()
