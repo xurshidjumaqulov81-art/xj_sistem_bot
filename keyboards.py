@@ -21,11 +21,11 @@ def kb_levels():
     kb.adjust(2)
     return kb.as_markup()
 
-def kb_confirm():
+def kb_levels():
     kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Ҳа, тасдиқлайман", callback_data="reg:confirm:yes")
-    kb.button(text="✏️ Таҳрирлаш", callback_data="reg:confirm:edit")
-    kb.adjust(1)
+    for lvl in ["Oddiy Xamkor", "XJ Manager", "XJ Bronza", "XJ Silver"]:
+        kb.button(text=lvl, callback_data=f"reg:level:{lvl}")
+    kb.adjust(2)
     return kb.as_markup()
 
 def kb_edit_fields():
