@@ -293,7 +293,7 @@ async def text_handler(message: Message):
             await db.set_state(user_id, REG_PHONE)
             await admin_notify(f"📝 Қўшилган вақт: {text} | <code>{user_id}</code>")
             return await message.answer(
-                "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг 👇",
+                "Тушунарли ✅\n\nЭнди телефон рақамингизни юборинг Масалан +998991234567 👇",
                 reply_markup=kb_contact()
             )
 
