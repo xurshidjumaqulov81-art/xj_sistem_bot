@@ -16,7 +16,7 @@ def kb_contact():
 
 def kb_levels():
     kb = InlineKeyboardBuilder()
-    for lvl in ["Новичок", "База", "Профи", "Лидер"]:
+    for lvl in ["Oddiy Xamkor", "XJ Manager", "XJ Bronze", "XJ Silver"]:
         kb.button(text=lvl, callback_data=f"reg:level:{lvl}")
     kb.adjust(2)
     return kb.as_markup()
