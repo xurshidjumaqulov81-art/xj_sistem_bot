@@ -115,7 +115,6 @@ async def on_shutdown():
     print("🛑 DB closed")
 
 
-XURSHID ILHAMIDDINOVICH, [29/01/26 02:18]
 async def reset_stage2(user_id: int):
     pool = _p()
     async with pool.acquire() as conn:
