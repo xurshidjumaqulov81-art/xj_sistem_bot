@@ -407,7 +407,7 @@ async def reg_confirm_yes(call: CallbackQuery):
 # STAGE 2 MATERIALS (content/stage4)
 # ======================
 async def stage2_send_text(call: CallbackQuery):
-    path = STAGE2_DIR / "XJXJ_Kompaniyasi_Tanishtiruv.txt"
+    path = STAGE2_DIR / "XJ_Kompaniyasi_Tanishtiruv.txt"
     if not path.exists():
         return await call.message.answer("❌ Матн файли топилмади.")
     content = path.read_text(encoding="utf-8", errors="ignore")
