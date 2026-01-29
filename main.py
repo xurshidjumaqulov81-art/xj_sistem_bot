@@ -437,7 +437,7 @@ async def stage2_send_video(call: CallbackQuery):
 
 async def stage2_send_links(call: CallbackQuery):
     # ✅ sizdagi real nom: xj_link.txt
-    path = STAGE2_DIR / "xj_link.txt"
+    path = STAGE2_DIR / "xjxj_link.txt"
     if not path.exists():
         return await call.message.answer("❌ Линклар файли топилмади.")
     content = path.read_text(encoding="utf-8", errors="ignore").strip()
